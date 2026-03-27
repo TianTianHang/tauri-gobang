@@ -1,0 +1,112 @@
+.main-menu {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+.menu-container {
+  text-align: center;
+  padding: 24px;
+  max-width: 400px;
+  width: 100%;
+}
+
+.menu-title {
+  font-size: 48px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+.menu-subtitle {
+  color: var(--text-secondary);
+  font-size: 15px;
+  margin: 8px 0 32px;
+  font-weight: 400;
+}
+
+.menu-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.menu-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  min-height: 56px;
+}
+
+.menu-btn:hover {
+  background: var(--bg-primary);
+  border-color: var(--accent);
+}
+
+.menu-btn:active {
+  transform: scale(0.98);
+}
+
+.menu-btn .btn-icon {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 8px;
+  color: var(--accent);
+}
+
+.btn-text {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.btn-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+@media (min-width: 768px) {
+  .menu-container {
+    padding: 48px;
+  }
+
+  .menu-title {
+    font-size: 64px;
+  }
+
+  .menu-subtitle {
+    font-size: 16px;
+    margin-bottom: 48px;
+  }
+
+  .menu-buttons {
+    gap: 16px;
+    max-width: 360px;
+    margin: 0 auto;
+  }
+
+  .menu-btn {
+    padding: 24px 32px;
+  }
+
+  .menu-btn .btn-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .btn-text {
+    font-size: 18px;
+  }
+}

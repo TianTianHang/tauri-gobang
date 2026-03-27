@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
+
+:root {
+  font-family: "Noto Sans SC", Inter, system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 400;
+  touch-action: manipulation;
+
+  --text-primary: #171717;
+  --text-secondary: #404040;
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F5F5F5;
+  --panel-bg: #FFFFFF;
+  --border: #E5E5E5;
+  --accent: #D4AF37;
+  --accent-hover: #C49B2B;
+  --text-on-accent: #FFFFFF;
+
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.game-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+  padding: 16px;
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+.setup-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text-primary: #E5E5E5;
+    --text-secondary: #A0A0A0;
+    --bg-primary: #0A0A0A;
+    --bg-secondary: #1A1A1A;
+    --panel-bg: #0A0A0A;
+    --border: #2A2A2A;
+    --accent: #D4AF37;
+    --accent-hover: #E5C158;
+    --text-on-accent: #0A0A0A;
+  }
+}
+
+@media (min-width: 768px) {
+  .game-page {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 24px;
+    padding: 24px;
+  }
+}

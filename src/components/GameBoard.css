@@ -1,0 +1,14 @@
+.game-board {
+  cursor: pointer;
+  border-radius: 12px;
+  max-width: 100%;
+  height: auto;
+  display: block;
+  touch-action: none;
+}
+
+@media (min-width: 768px) {
+  .game-board {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  }
+}
