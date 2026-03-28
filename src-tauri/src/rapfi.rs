@@ -11,6 +11,9 @@ const BOARD_SIZE: usize = 15;
 
 macro_rules! debugln {
     ($($arg:tt)*) => {
+        #[cfg(target_os = "android")]
+        eprintln!($($arg)*);
+        #[cfg(not(target_os = "android"))]
         if std::env::var("TAURI_GOBANG_DEBUG").is_ok() {
             eprintln!($($arg)*);
         }
@@ -31,30 +34,98 @@ impl RapfiEngine {
     ) -> Result<Self, String> {
         debugln!("🚀 [AI] Starting Rapfi engine");
 
-        // 使用 PathResolver 查找 sidecar 二进制
-        let engine_binary = get_engine_path(app)?;
-        let binaries_dir = get_binaries_dir(app)?;
+        #[cfg(target_os = "android")]
+        {
+            return Self::new_android(app, timeout_ms);
+        }
 
-        debugln!("📁 [AI] Engine binary: {}", engine_binary.display());
-        debugln!("📁 [AI] Working directory: {}", binaries_dir.display());
+        #[cfg(not(target_os = "android"))]
+        {
+            // 使用 PathResolver 查找 sidecar 二进制
+            let engine_binary = get_engine_path(app)?;
+            let binaries_dir = get_binaries_dir(app)?;
 
-        // 启动进程
-        let mut process = Command::new(&engine_binary)
+            debugln!("📁 [AI] Engine binary: {}", engine_binary.display());
+            debugln!("📁 [AI] Working directory: {}", binaries_dir.display());
+
+            // 启动进程
+            let mut process = Command::new(&engine_binary)
+                .arg("--mode")
+                .arg("gomocup")
+                .current_dir(&binaries_dir)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .map_err(|e| {
+                    debugln!("❌ [AI] Failed to spawn engine: {}", e);
+                    format!("Failed to start engine: {}", e)
+                })?;
+
+            debugln!("✅ [AI] Engine spawned successfully");
+
+            // 分别提取 stdin 和 stdout 避免部分移动
+            let stdin = process.stdin.take().ok_or("Failed to get stdin")?;
+            let stdout = process.stdout.take().ok_or("Failed to get stdout")?;
+
+            let mut engine = Self {
+                stdin,
+                stdout: BufReader::new(stdout),
+                process,
+                timeout: Duration::from_millis(timeout_ms),
+            };
+
+            // 发送 START 命令
+            engine.send_command(&format!("START {}", BOARD_SIZE))?;
+            let response = engine.read_line()?;
+            debugln!("📥 [AI] START response: {}", response);
+
+            Ok(engine)
+        }
+    }
+
+    #[cfg(target_os = "android")]
+    fn new_android<R: tauri::Runtime>(
+        app: &tauri::AppHandle<R>,
+        timeout_ms: u64,
+    ) -> Result<Self, String> {
+        debugln!("🤖 [AI] Using Android native library execution");
+
+        // Get rapfi path from nativeLibraryDir (bundled in APK, executable via SELinux)
+        let rapfi_path = crate::android_rapfi::get_rapfi_path()?;
+
+        // Get cache directory for working directory (contains config.toml and weights)
+        let cache_dir = app
+            .path()
+            .cache_dir()
+            .map_err(|e| format!("Failed to get cache dir: {}", e))?;
+
+        debugln!("📁 [AI] Rapfi binary: {}", rapfi_path.display());
+        debugln!("📁 [AI] Working directory: {}", cache_dir.display());
+
+        // Spawn rapfi process directly (no shell wrapper needed)
+        // nativeLibraryDir has app_lib_file SELinux context which allows execution
+        // LD_LIBRARY_PATH needed for libc++_shared.so (bundled in jniLibs)
+        let lib_dir = rapfi_path
+            .parent()
+            .ok_or("Cannot get parent dir of rapfi binary")?;
+
+        let mut process = Command::new(&rapfi_path)
             .arg("--mode")
             .arg("gomocup")
-            .current_dir(&binaries_dir)
+            .current_dir(&cache_dir)
+            .env("LD_LIBRARY_PATH", lib_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
             .map_err(|e| {
-                debugln!("❌ [AI] Failed to spawn engine: {}", e);
+                debugln!("❌ [AI] Failed to spawn rapfi: {}", e);
                 format!("Failed to start engine: {}", e)
             })?;
 
-        debugln!("✅ [AI] Engine spawned successfully");
+        debugln!("✅ [AI] Android rapfi spawned successfully");
 
-        // 分别提取 stdin 和 stdout 避免部分移动
         let stdin = process.stdin.take().ok_or("Failed to get stdin")?;
         let stdout = process.stdout.take().ok_or("Failed to get stdout")?;
 
@@ -65,7 +136,6 @@ impl RapfiEngine {
             timeout: Duration::from_millis(timeout_ms),
         };
 
-        // 发送 START 命令
         engine.send_command(&format!("START {}", BOARD_SIZE))?;
         let response = engine.read_line()?;
         debugln!("📥 [AI] START response: {}", response);
@@ -180,17 +250,8 @@ pub enum Difficulty {
     Hard,
 }
 
+#[cfg(not(target_os = "android"))]
 fn get_engine_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
-    #[cfg(target_os = "android")]
-    {
-        match crate::android_rapfi::extract_rapfi_binary(app) {
-            Ok(path) => return Ok(path),
-            Err(e) => {
-                eprintln!("⚠️ [Android] Extraction failed, falling back: {}", e);
-            }
-        }
-    }
-
     use std::env;
 
     // 1. 尝试从资源目录查找（打包后）
@@ -263,6 +324,19 @@ fn get_engine_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<PathB
 }
 
 fn get_binaries_dir<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
+    #[cfg(target_os = "android")]
+    {
+        // On Android, rapfi binary is extracted to cache directory
+        // Use cache directory as working directory
+        if let Ok(cache_dir) = app.path().cache_dir() {
+            debugln!(
+                "📁 [AI] Using cache dir as working dir: {}",
+                cache_dir.display()
+            );
+            return Ok(cache_dir);
+        }
+    }
+
     // 1. 尝试从资源目录解析
     if let Ok(path) = app.path().resolve("binaries", BaseDirectory::Resource) {
         if path.exists() {
