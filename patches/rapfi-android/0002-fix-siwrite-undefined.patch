@@ -1,0 +1,30 @@
+From: Tauri Gobang Project <tauri-gobang@example.com>
+Date: Fri, 28 Mar 2026 21:03:00 +0000
+Subject: [PATCH 2/2] Fix S_IWRITE undefined error on Android
+
+Android NDK does not define S_IWRITE macro, only S_IWUSR.
+This change adds a compatibility definition to map S_IWRITE to S_IWUSR.
+
+This fixes the build error:
+  "error: use of undeclared identifier 'S_IWRITE'" in zip.c.
+---
+ Rapfi/external/zip/src/zip.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/Rapfi/external/zip/src/zip.c b/Rapfi/external/zip/src/zip.c
+index 2073455..92784b9 100644
+--- a/Rapfi/external/zip/src/zip.c
++++ b/Rapfi/external/zip/src/zip.c
+@@ -13,6 +13,10 @@
+ #include <sys/stat.h>
+ #include <time.h>
+ 
++#ifndef S_IWRITE
++#define S_IWRITE S_IWUSR
++#endif
++
+ #if defined(_WIN32) || defined(__WIN32__) || defined(_MSC_VER) ||              \
+     defined(__MINGW32__)
+ /* Win32, DOS, MSVC, MSVS */
+--
+2.34.1
