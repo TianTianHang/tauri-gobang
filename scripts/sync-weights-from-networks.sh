@@ -6,8 +6,10 @@ set -o pipefail  # Exit on pipe failure
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NETWORKS_DIR="$PROJECT_ROOT/third-party/rapfi/Networks/mix9svq"
+NETWORKS_CONFIG_DIR="$PROJECT_ROOT/third-party/rapfi/Networks/config-example"
 BINARIES_DIR="$PROJECT_ROOT/src-tauri/binaries"
 CONFIG_FILE="$BINARIES_DIR/config.toml"
+DEFAULT_CONFIG_FILE="$NETWORKS_CONFIG_DIR/config.toml"
 
 # Color codes for output
 RED='\033[0;31m'
@@ -25,7 +27,7 @@ usage() {
     cat << EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Sync NNUE weight files from rapfi Networks submodule to src-tauri/binaries/
+Sync NNUE weight files and default config from rapfi Networks submodule to src-tauri/binaries/
 
 OPTIONS:
     --force    Skip confirmation when overwriting existing files
@@ -186,6 +188,26 @@ update_config_annotation() {
     echo "  $annotation"
 }
 
+# Function to copy default config.toml if it doesn't exist
+copy_default_config() {
+    if [ ! -f "$DEFAULT_CONFIG_FILE" ]; then
+        warning_msg "Default config file not found at $DEFAULT_CONFIG_FILE"
+        return 0
+    fi
+
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo ""
+        echo "Copying default config.toml..."
+        cp "$DEFAULT_CONFIG_FILE" "$CONFIG_FILE"
+        success_msg "Default config.toml copied to $CONFIG_FILE"
+        echo "  Review and customize the configuration as needed."
+    else
+        echo ""
+        info_msg "Config file already exists: $CONFIG_FILE"
+        echo "  Skipping default config copy. To restore default, delete existing config first."
+    fi
+}
+
 # Function to check for existing weight files
 check_existing_files() {
     local existing_files=()
@@ -270,8 +292,8 @@ main() {
         display_info
     fi
 
-    echo "NNUE Weight Files Sync"
-    echo "====================="
+    echo "NNUE Weight Files & Config Sync"
+    echo "================================"
     echo ""
 
     # Validate Networks submodule
@@ -283,6 +305,9 @@ main() {
     # Copy weight files
     copy_weight_files
 
+    # Copy default config if it doesn't exist
+    copy_default_config
+
     # Update config.toml annotation
     update_config_annotation
 
@@ -292,7 +317,7 @@ main() {
     fi
 
     echo ""
-    success_msg "Weight files sync complete!"
+    success_msg "Weight files and config sync complete!"
 }
 
 # Run main function
