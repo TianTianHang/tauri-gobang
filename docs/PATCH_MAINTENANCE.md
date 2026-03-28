@@ -11,21 +11,70 @@ The rapfi source code requires two patches to build PIE (Position-Independent Ex
 
 These patches are stored in `patches/rapfi-android/` and automatically applied during build.
 
+## Git Submodule Integration
+
+Rapfi is now integrated as a Git submodule at `third-party/rapfi/`, replacing the old manual clone at `rapfi.tmp/`.
+
+### Submodule Structure
+
+```
+third-party/rapfi/
+├── .git                    # Submodule git directory
+├── Rapfi/                  # Main engine source
+├── Gomocalc/              # Calculator submodule
+├── Networks/              # NNUE weight files submodule
+└── Trainer/               # Training scripts submodule
+```
+
+### Initializing the Submodule
+
+```bash
+# Fresh clone
+git clone --recursive https://github.com/your-repo/tauri-gobang.git
+
+# Existing clone
+git submodule update --init --recursive third-party/rapfi
+```
+
+### Updating Rapfi Upstream
+
+```bash
+cd third-party/rapfi
+git pull origin master
+git submodule update --remote Networks
+cd ../..
+
+# Re-apply patches if needed
+bash scripts/apply-rapfi-patches.sh
+```
+
+### Advantages of Git Submodule
+
+- **Automatic tracking**: Upstream updates are just `git pull` away
+- **Version control**: Clear commit history for rapfi changes
+- **Team collaboration**: `--recursive` flag ensures all developers get the same version
+- **CI/CD friendly**: Standard Git commands work reliably
+
 ## Quick Start
 
 ### Building Android Binaries
 
 ```bash
-# 1. Clone rapfi source (if not already done)
+# 1. Initialize rapfi Git submodule (including Networks)
 git submodule update --init --recursive third-party/rapfi
 
-# 2. Clone Networks submodule
-cd third-party/rapfi/Rapfi/external/
-git clone https://github.com/dhbloo/rapfi-networks.git Networks
+# 2. Apply Android build patches
+bash scripts/apply-rapfi-patches.sh
 
-# 3. Build (patches are applied automatically)
-cd ../../..
+# 3. Build Android binaries
 bash scripts/build-android-rapfi.sh
+```
+
+### One-Line Setup
+
+```bash
+# Initialize and patch everything in one command
+bash scripts/setup-rapfi-source.sh
 ```
 
 ### Manual Patch Management
@@ -62,6 +111,8 @@ git status Rapfi/CMakeLists.txt Rapfi/external/zip/src/zip.c
 ```
 cannot find -lpthread
 ```
+
+**Note**: All patch file paths now reference the Git submodule location `third-party/rapfi/` instead of the old manual clone `rapfi.tmp/`.
 
 ### 0002-fix-siwrite-undefined.patch
 
