@@ -8,13 +8,4 @@ class MainActivity : TauriActivity() {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
   }
-
-  fun getNativeLibraryDir(): String {
-    return applicationInfo.nativeLibraryDir
-  }
-
-  fun getRapfiExecutablePath(): String {
-    val libDir = applicationInfo.nativeLibraryDir
-    return "$libDir/librapfi.so"
-  }
 }

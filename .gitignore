@@ -56,3 +56,4 @@ coverage/
 *.pid.lock
 .lock-wscript
 .turbo/
+binaries
