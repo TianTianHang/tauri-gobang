@@ -50,15 +50,34 @@ Why this works:
 
 For a fresh clone of this repository:
 
-1. **Clone the repo** - All files including `gen/android/app/build.gradle.kts` are present
-2. **Initialize Android (if needed)**:
+1. **Clone the repo with submodules**:
+   ```bash
+   git clone --recursive https://github.com/your-repo/tauri-gobang.git
+   cd tauri-gobang
+   ```
+
+   If you forgot `--recursive`:
+   ```bash
+   git submodule update --init --recursive
+   ```
+
+2. **Setup rapfi source**:
+   ```bash
+   bash scripts/setup-rapfi-source.sh
+   ```
+   - Initializes `third-party/rapfi/` Git submodule
+   - Applies Android build patches
+   - Prepares Networks submodule for weight files
+
+3. **Initialize Android (if needed)**:
    ```bash
    pnpm tauri android init
    ```
    - This command generates `gen/android/` if missing
    - It **will not overwrite** existing `build.gradle.kts` (verified Tauri behavior)
    - The `apply(from = ...)` line remains intact
-3. **Run dev build**:
+
+4. **Run dev build**:
    ```bash
    pnpm tauri android dev
    ```
@@ -93,6 +112,26 @@ If you accidentally delete it:
 **Rapfi AI doesn't work on device**
 - Check that `copyRapfiBinaries` task ran: `./gradlew copyRapfiBinaries --info`
 - Verify binaries exist: `ls -la gen/android/app/src/main/jniLibs/*/librapfi.so`
+
+**Rapfi source not found (third-party/rapfi missing)**
+- Initialize submodules: `git submodule update --init --recursive`
+- Run setup script: `bash scripts/setup-rapfi-source.sh`
+
+**Patches not applied (Android build fails)**
+- Apply patches: `bash scripts/apply-rapfi-patches.sh`
+- Verify status: `cd third-party/rapfi && git status Rapfi/CMakeLists.txt`
+
+**Networks submodule not initialized (weight files missing)**
+- Initialize rapfi submodules:
+  ```bash
+  cd third-party/rapfi
+  git submodule update --init --recursive
+  ```
+
+**Old rapfi.tmp directory conflict**
+- If you have `third-party/rapfi.tmp/`, it may conflict with the new submodule
+- Consider renaming: `mv third-party/rapfi.tmp third-party/rapfi.tmp.backup`
+- Then initialize submodule: `git submodule update --init --recursive`
 
 **Tauri CLI upgrade breaks build**
 - Run `git diff gen/android/` to see what changed
