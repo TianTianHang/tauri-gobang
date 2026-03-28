@@ -1,5 +1,18 @@
 # Tasks: Android Rapfi Integration
 
+## 0. 问题诊断与修复
+
+- [x] 0.1 探索并诊断 x86_64 版本无法执行的根本原因
+- [x] 0.2 确认 PIE (Position-Independent Executable) 要求
+- [x] 0.3 确认 SELinux execute_no_trans 限制
+- [x] 0.4 创建重建指南文档 (`docs/ANDROID_RAPFI_REBUILD_GUIDE.md`)
+- [x] 0.5 删除现有的非 PIE x86_64 二进制
+- [x] 0.6 克隆 rapfi 源码到 `third-party/rapfi`
+- [x] 0.7 修改构建脚本确保生成 PIE 二进制
+- [x] 0.8 执行构建并验证 x86_64 为 PIE
+- [x] 0.9 验证 aarch64 仍然是 PIE（未受影响）
+- [x] 0.10 更新 `rapfi.rs` 使用 shell wrapper 执行
+
 ## 1. 代码准备
 
 - [x] 1.1 验证现有文件存在
@@ -33,6 +46,17 @@
 - [x] 4.5 实现失败时记录日志并继续原有逻辑的回退机制
 - [x] 4.6 确保不影响桌面平台的现有行为
 
+## 4.5. Android Shell Wrapper 执行（新任务）
+
+- [x] 4.5.1 在 `rapfi.rs` 的 `RapfiEngine::new_android()` 中实现 shell wrapper
+- [x] 4.5.2 使用 `Command::new("/system/bin/sh")` 而不是直接执行二进制
+- [x] 4.5.3 添加 `.arg("-c")` 和完整命令字符串
+- [x] 4.5.4 保持 stdin/stdout/stderr 管道连接
+- [x] 4.5.5 设置正确的工作目录 (cache_dir)
+- [x] 4.5.6 添加错误处理和日志输出
+- [x] 4.5.7 确保桌面平台不受影响（使用 `#[cfg(target_os = "android")]`）
+- [ ] 4.5.8 测试 shell wrapper 能正常启动 rapfi 进程
+
 ## 5. 资源配置验证
 
 - [x] 5.1 检查 `src-tauri/tauri.conf.json` 文件
@@ -54,6 +78,19 @@
 - [ ] 7.4 验证日志中出现 "📦 [Android] Extracting rapfi from assets"
 - [ ] 7.5 验证日志中出现 "✅ [Android] rapfi extracted successfully"
 
+## 7.5. PIE 二进制验证（新任务）
+
+- [x] 7.5.1 运行 `file src-tauri/binaries/rapfi-x86_64-linux-android`
+- [x] 7.5.2 验证输出包含 "pie executable"（不是 "executable"）
+- [x] 7.5.3 运行 `readelf -h src-tauri/binaries/rapfi-x86_64-linux-android | grep Type`
+- [x] 7.5.4 验证输出为 "Type: DYN"（不是 "EXEC"）
+- [x] 7.5.5 运行 `readelf -l src-tauri/binaries/rapfi-x86_64-linux-android | grep INTERP`
+- [x] 7.5.6 验证有 INTERP 段（表示动态链接）
+- [x] 7.5.7 运行 `readelf -d src-tauri/binaries/rapfi-x86_64-linux-android | grep libc++_shared`
+- [x] 7.5.8 验证依赖 libc++_shared.so
+- [x] 7.5.9 对比 aarch64 版本的相同属性，确保一致
+- [x] 7.5.10 检查文件大小在 20-30MB 范围内（不是 1.9MB）
+
 ## 8. AI 功能验证
 
 - [ ] 8.1 在 Android 设备/模拟器上启动应用
@@ -63,6 +100,16 @@
 - [ ] 8.5 测试 "困难" 难度级别
 - [ ] 8.6 验证 AI 在合理时间内响应（<3秒）
 - [ ] 8.7 验证 AI 落子符合规则
+
+## 8.8. Shell Wrapper 执行验证（新任务）
+
+- [ ] 8.8.1 在 `adb logcat` 中检查没有 linker "unexpected e_type" 错误
+- [ ] 8.8.2 检查 SELinux 日志显示 `granted { execute }`（不是 denied）
+- [ ] 8.8.3 验证 rapfi 进程成功启动（没有 Permission denied）
+- [ ] 8.8.4 验证 Piskvork 协议通信正常（START, BOARD, DONE 命令）
+- [ ] 8.8.5 验证 AI 返回有效的落子坐标
+- [ ] 8.8.6 在 x86_64 模拟器上测试
+- [ ] 8.8.7 在 ARM64 真机上测试（如果有）
 
 ## 9. 缓存机制验证
 
@@ -104,4 +151,4 @@
 - [x] 14.1 运行 `cargo fmt` 格式化代码
 - [x] 14.2 运行 `cargo clippy` 检查代码质量
 - [x] 14.3 删除调试日志（如果需要）
-- [ ] 14.4 提交代码到版本控制
+- [x] 14.4 提交代码到版本控制

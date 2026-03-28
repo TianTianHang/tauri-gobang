@@ -12,6 +12,9 @@ use tauri::Emitter;
 
 macro_rules! debugln {
     ($($arg:tt)*) => {
+        #[cfg(target_os = "android")]
+        eprintln!($($arg)*);
+        #[cfg(not(target_os = "android"))]
         if std::env::var("TAURI_GOBANG_DEBUG").is_ok() {
             eprintln!($($arg)*);
         }
@@ -206,6 +209,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_fs::init())
         .manage(Arc::new(Mutex::new(NetworkState::new())))
         .invoke_handler(tauri::generate_handler![
             new_game,
