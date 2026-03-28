@@ -33,6 +33,12 @@
     ],
     "externalBin": [
       "binaries/rapfi"
+    ],
+    "resources": [
+      "binaries/config.toml",
+      "binaries/*.bin.lz4",
+      "binaries/rapfi-aarch64-linux-android",
+      "binaries/rapfi-x86_64-linux-android"
     ]
   }
 }

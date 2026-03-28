@@ -2,8 +2,9 @@
 
 ## Project Overview
 
-Tauri 2 + React 19 + TypeScript desktop application (Gobang/Five-in-a-Row game).
+Tauri 2 + React 19 + TypeScript desktop and Android application (Gobang/Five-in-a-Row game).
 Frontend in `src/`, Rust backend in `src-tauri/src/`. Communication via Tauri `invoke` IPC and Tauri events.
+Android support via `android_rapfi.rs` module (gated with `#[cfg(target_os = "android")]`).
 
 ## Build & Run Commands
 
@@ -13,6 +14,8 @@ pnpm build            # Type-check (tsc) + build frontend
 pnpm preview          # Preview production build
 pnpm tauri dev        # Full Tauri desktop app in dev mode
 pnpm tauri build      # Build production desktop app
+pnpm tauri android dev  # Full Tauri Android app in dev mode
+pnpm tauri build --target android  # Build production Android APK
 ```
 
 **Rust backend:**
@@ -60,6 +63,8 @@ src-tauri/src/
   game.rs                   # GameState, board logic, win checking
   ai.rs                     # Minimax AI with alpha-beta pruning
   network.rs                # TCP networking, Tauri event emission
+  rapfi.rs                  # Rapfi engine wrapper, path resolution
+  android_rapfi.rs          # Android binary extraction (cfg-gated)
 ```
 
 ## TypeScript / React Style

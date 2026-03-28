@@ -1,3 +1,5 @@
+#[cfg(target_os = "android")]
+mod android_rapfi;
 mod game;
 mod network;
 mod rapfi;
@@ -64,7 +66,7 @@ fn ai_move_start(
     std::thread::spawn(move || {
         debugln!("🧠 [AI] Background thread started, difficulty: {:?}", diff);
 
-        let result = rapfi::get_rapfi_move(&state, diff, app_clone.clone());
+        let result = rapfi::get_rapfi_move(&app_clone, &state, diff);
 
         match result {
             Ok((row, col)) => {

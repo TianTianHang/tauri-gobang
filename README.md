@@ -50,6 +50,24 @@ const result = await invoke('ai_move', {
 ✅ **专业** - 使用比赛验证的引擎
 ✅ **兼容** - API 保持不变，前端无需修改
 
+## 🤖 Android 支持
+
+Android 平台通过从 APK assets 中提取 rapfi 二进制文件来支持 AI 功能，无需额外安装引擎。
+
+**支持的架构：** `aarch64` (ARM64)、`x86_64`
+
+**工作原理：**
+1. 首次启动时自动检测设备架构
+2. 从 `assets/binaries/` 提取对应架构的 rapfi 二进制到应用缓存目录
+3. 设置可执行权限 (chmod 755)
+4. 后续启动通过缓存检查跳过提取
+5. 提取失败时回退到默认路径查找（向后兼容）
+
+**相关文件：**
+- `src-tauri/src/android_rapfi.rs` — Android 二进制提取模块（`#[cfg(target_os = "android")]`）
+- `src-tauri/binaries/rapfi-aarch64-linux-android` — ARM64 Android 二进制
+- `src-tauri/binaries/rapfi-x86_64-linux-android` — x86_64 Android 二进制
+
 ## 📚 文档
 
 - [完整集成指南](docs/SIDECAR_INTEGRATION.md)

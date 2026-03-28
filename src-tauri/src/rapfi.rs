@@ -4,8 +4,8 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::game::GameState;
-
-const SIDECAR_NAME: &str = "rapfi";
+use tauri::path::BaseDirectory;
+use tauri::Manager;
 
 const BOARD_SIZE: usize = 15;
 
@@ -25,20 +25,50 @@ pub struct RapfiEngine {
 }
 
 impl RapfiEngine {
-    pub fn new(mut process: Child, timeout_ms: u64) -> Result<Self, String> {
+    pub fn new<R: tauri::Runtime>(
+        app: &tauri::AppHandle<R>,
+        timeout_ms: u64,
+    ) -> Result<Self, String> {
+        debugln!("🚀 [AI] Starting Rapfi engine");
+
+        // 使用 PathResolver 查找 sidecar 二进制
+        let engine_binary = get_engine_path(app)?;
+        let binaries_dir = get_binaries_dir(app)?;
+
+        debugln!("📁 [AI] Engine binary: {}", engine_binary.display());
+        debugln!("📁 [AI] Working directory: {}", binaries_dir.display());
+
+        // 启动进程
+        let mut process = Command::new(&engine_binary)
+            .arg("--mode")
+            .arg("gomocup")
+            .current_dir(&binaries_dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|e| {
+                debugln!("❌ [AI] Failed to spawn engine: {}", e);
+                format!("Failed to start engine: {}", e)
+            })?;
+
+        debugln!("✅ [AI] Engine spawned successfully");
+
+        // 分别提取 stdin 和 stdout 避免部分移动
         let stdin = process.stdin.take().ok_or("Failed to get stdin")?;
         let stdout = process.stdout.take().ok_or("Failed to get stdout")?;
-        let stdout = BufReader::new(stdout);
 
         let mut engine = Self {
             stdin,
-            stdout,
+            stdout: BufReader::new(stdout),
             process,
             timeout: Duration::from_millis(timeout_ms),
         };
 
+        // 发送 START 命令
         engine.send_command(&format!("START {}", BOARD_SIZE))?;
-        engine.read_line()?;
+        let response = engine.read_line()?;
+        debugln!("📥 [AI] START response: {}", response);
 
         Ok(engine)
     }
@@ -80,26 +110,22 @@ impl RapfiEngine {
     fn get_move_from_state(&mut self, state: &GameState) -> Result<(usize, usize), String> {
         debugln!("📊 [AI] Board has {} moves", state.history.len());
 
-        // Set timeout for this move (in milliseconds)
+        // 设置超时
         let timeout_ms = self.timeout.as_millis();
         self.send_command(&format!("INFO timeout_turn {}", timeout_ms))?;
         debugln!("⏱️  [AI] Set timeout: {}ms", timeout_ms);
 
-        // Check if this is the first move (AI plays first)
+        // 检查是否先手
         if state.history.is_empty() {
-            // AI plays first on empty board
             debugln!("📤 [AI] Sending: BEGIN");
             self.send_command("BEGIN")?;
         } else {
-            // Reconstruct board state using BOARD command
+            // 重构棋盘状态
             debugln!("📤 [AI] Sending: BOARD");
             self.send_command("BOARD")?;
 
-            // Send all moves in chronological order
-            // According to protocol: 1 = own stone (AI/black), 2 = opponent's stone (white)
+            // 按时间顺序发送所有移动
             for (i, move_record) in state.history.iter().enumerate() {
-                // Odd moves (0, 2, 4...) are black/AI stones (player 1)
-                // Even moves (1, 3, 5...) are white/opponent stones (player 2)
                 let player = if i % 2 == 0 { "1" } else { "2" };
                 let move_str = format!("{},{},{}", move_record.col, move_record.row, player);
                 self.send_command(&move_str)?;
@@ -110,11 +136,11 @@ impl RapfiEngine {
             self.send_command("DONE")?;
         }
 
-        // Read response - engine will output MESSAGE lines, then final coordinates
+        // 读取响应
         loop {
             let line = self.read_line()?;
 
-            // Parse coordinate response (format: "col,row" or "x,y")
+            // 解析坐标响应
             let parts: Vec<&str> = line.split(',').collect();
             if parts.len() == 2 {
                 if let (Ok(col), Ok(row)) = (
@@ -128,7 +154,7 @@ impl RapfiEngine {
                 }
             }
 
-            // Skip debug/info messages (but print them for debugging)
+            // 跳过调试/信息消息
             if line.starts_with("MESSAGE") || line.starts_with("ERROR") {
                 debugln!("📥 [AI] Engine: {}", line);
                 continue;
@@ -142,7 +168,7 @@ impl RapfiEngine {
 impl Drop for RapfiEngine {
     fn drop(&mut self) {
         let _ = self.send_command("END");
-        let _ = self.process.wait();
+        let _ = self.process.kill();
     }
 }
 
@@ -154,52 +180,53 @@ pub enum Difficulty {
     Hard,
 }
 
-fn get_binaries_dir() -> Result<PathBuf, String> {
-    let exe_dir = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable path: {}", e))?
-        .parent()
-        .map(PathBuf::from)
-        .unwrap_or_default();
-
-    debugln!("🔍 [AI DEBUG] Looking for binaries directory (config.toml):");
-
-    // Try multiple possible locations for the binaries directory
-    let possible_dirs = vec![
-        exe_dir.join("binaries"),
-        exe_dir.join("..").join("binaries"),
-        PathBuf::from("./binaries"),
-        PathBuf::from("../binaries"),
-        exe_dir.join("../../src-tauri/binaries"),
-        exe_dir.clone(),
-    ];
-
-    for (i, dir) in possible_dirs.iter().enumerate() {
-        let config_exists = dir.join("config.toml").exists();
-        debugln!(
-            "   [{}] Checking: {} - has config: {}",
-            i,
-            dir.display(),
-            config_exists
-        );
-        if config_exists {
-            debugln!("   ✅ FOUND binaries dir: {}", dir.display());
-            return Ok(dir.clone());
+fn get_engine_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
+    #[cfg(target_os = "android")]
+    {
+        match crate::android_rapfi::extract_rapfi_binary(app) {
+            Ok(path) => return Ok(path),
+            Err(e) => {
+                eprintln!("⚠️ [Android] Extraction failed, falling back: {}", e);
+            }
         }
     }
 
-    // If config not found, try to use exe_dir as fallback
-    debugln!(
-        "   ⚠️  Config not found, using exe_dir as fallback: {}",
-        exe_dir.display()
-    );
-    Ok(exe_dir)
-}
+    use std::env;
 
-fn get_bundled_engine_path() -> Result<String, String> {
-    // Get target triple at runtime (from Cargo build env)
-    // If not available (e.g., when not built by Cargo), use compile-time cfg
-    let target = std::env::var("TARGET").unwrap_or_else(|_| {
-        // Fallback to compile-time detection
+    // 1. 尝试从资源目录查找（打包后）
+    if let Ok(path) = app.path().resolve("rapfi", BaseDirectory::Resource) {
+        if path.exists() {
+            debugln!("📁 [AI] Found rapfi in resources: {}", path.display());
+            return Ok(path);
+        }
+    }
+
+    // 2. 尝试从当前可执行文件目录查找（开发环境）
+    if let Ok(exe_path) = env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let rapfi_path = exe_dir.join("rapfi");
+            if rapfi_path.exists() {
+                debugln!("📁 [AI] Found rapfi next to exe: {}", rapfi_path.display());
+                return Ok(rapfi_path);
+            }
+
+            // Windows下尝试 .exe 扩展名
+            #[cfg(target_os = "windows")]
+            {
+                let rapfi_exe = exe_dir.join("rapfi.exe");
+                if rapfi_exe.exists() {
+                    debugln!(
+                        "📁 [AI] Found rapfi.exe next to exe: {}",
+                        rapfi_exe.display()
+                    );
+                    return Ok(rapfi_exe);
+                }
+            }
+        }
+    }
+
+    // 3. 开发环境 fallback
+    let target = env::var("TARGET").unwrap_or_else(|_| {
         if cfg!(target_os = "windows") {
             if cfg!(target_arch = "x86_64") {
                 "x86_64-pc-windows-msvc".to_string()
@@ -223,71 +250,58 @@ fn get_bundled_engine_path() -> Result<String, String> {
         }
     });
 
-    let platform_engine_name = format!("{}-{}", SIDECAR_NAME, target);
-    let simple_engine_name = if cfg!(target_os = "windows") {
-        format!("{}.exe", SIDECAR_NAME)
-    } else {
-        SIDECAR_NAME.to_string()
-    };
+    let dev_path = PathBuf::from("./src-tauri/binaries").join(format!("rapfi-{}", target));
 
-    // Try to find sidecar using Tauri's sidecar resolution
-    let exe_dir = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable path: {}", e))?
-        .parent()
-        .map(PathBuf::from)
-        .unwrap_or_default();
-
-    debugln!("🔍 [AI DEBUG] Looking for Rapfi engine:");
-    debugln!("   exe_dir: {}", exe_dir.display());
-    debugln!("   platform_engine_name: {}", platform_engine_name);
-    debugln!("   simple_engine_name: {}", simple_engine_name);
-
-    // Common sidecar locations (try platform-specific name first, then simple name)
-    let paths: Vec<PathBuf> = vec![
-        // Platform-specific name (Tauri sidecar convention)
-        exe_dir.join(&platform_engine_name),
-        exe_dir.join("binaries").join(&platform_engine_name),
-        exe_dir
-            .join("..")
-            .join("binaries")
-            .join(&platform_engine_name),
-        PathBuf::from(format!("./binaries/{}", platform_engine_name)),
-        // Simple name as fallback
-        exe_dir.join(&simple_engine_name),
-        exe_dir.join("binaries").join(&simple_engine_name),
-        exe_dir
-            .join("..")
-            .join("binaries")
-            .join(&simple_engine_name),
-        PathBuf::from(format!("./binaries/{}", simple_engine_name)),
-    ];
-
-    for (i, path) in paths.iter().enumerate() {
-        debugln!(
-            "   [{}] Checking: {} - exists: {}",
-            i,
-            path.display(),
-            path.exists()
-        );
-        if path.exists() {
-            debugln!("   ✅ FOUND: {}", path.display());
-            let canonical = path
-                .canonicalize()
-                .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
-            debugln!("   📌 Canonicalized to: {}", canonical.display());
-            return Ok(canonical.to_string_lossy().to_string());
-        }
+    if dev_path.exists() {
+        debugln!("📁 [AI] Using dev rapfi: {}", dev_path.display());
+        return Ok(dev_path);
     }
 
     Err(format!(
-        "Rapfi engine not found. Please download from https://github.com/dhbloo/rapfi/releases and place in src-tauri/binaries/ directory.",
+        "Rapfi engine not found. Please ensure it's built or in src-tauri/binaries/"
     ))
 }
 
+fn get_binaries_dir<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
+    // 1. 尝试从资源目录解析
+    if let Ok(path) = app.path().resolve("binaries", BaseDirectory::Resource) {
+        if path.exists() {
+            debugln!(
+                "📁 [AI] Found binaries dir in resources: {}",
+                path.display()
+            );
+            return Ok(path);
+        }
+    }
+
+    // 2. 尝试从当前可执行文件目录
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let binaries_dir = exe_dir.join("binaries");
+            if binaries_dir.exists() {
+                debugln!(
+                    "📁 [AI] Found binaries dir next to exe: {}",
+                    binaries_dir.display()
+                );
+                return Ok(binaries_dir);
+            }
+        }
+    }
+
+    // 3. 开发环境 fallback
+    let dev_path = PathBuf::from("./src-tauri/binaries");
+    if dev_path.exists() {
+        debugln!("📁 [AI] Using dev binaries dir: {}", dev_path.display());
+        return Ok(dev_path);
+    }
+
+    Err("binaries directory not found".to_string())
+}
+
 pub fn get_rapfi_move<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
     state: &GameState,
     difficulty: Difficulty,
-    _app: tauri::AppHandle<R>,
 ) -> Result<(usize, usize), String> {
     let timeout = match difficulty {
         Difficulty::Easy => 500,
@@ -296,32 +310,10 @@ pub fn get_rapfi_move<R: tauri::Runtime>(
     };
 
     debugln!(
-        "🎮 [AI DEBUG] Starting AI move calculation, difficulty: {:?}",
+        "🎮 [AI] Starting AI move calculation, difficulty: {:?}",
         difficulty
     );
 
-    let engine_binary = get_bundled_engine_path()?;
-    let binaries_dir = get_binaries_dir()?;
-
-    debugln!("🚀 [AI DEBUG] Launching engine:");
-    debugln!("   engine_binary: {}", engine_binary);
-    debugln!("   working_dir: {}", binaries_dir.display());
-
-    let process = Command::new(&engine_binary)
-        .arg("--mode")
-        .arg("gomocup")
-        .current_dir(&binaries_dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|e| {
-            debugln!("❌ [AI DEBUG] Failed to spawn engine: {}", e);
-            format!("Failed to start engine: {}", e)
-        })?;
-
-    debugln!("✅ [AI DEBUG] Engine spawned successfully");
-
-    let mut engine = RapfiEngine::new(process, timeout)?;
+    let mut engine = RapfiEngine::new(app, timeout)?;
     engine.get_move_from_state(state)
 }
