@@ -1,0 +1,3 @@
+[submodule "third-party/rapfi"]
+	path = third-party/rapfi
+	url = https://github.com/dhbloo/rapfi.git
