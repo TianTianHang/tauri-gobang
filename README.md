@@ -82,21 +82,32 @@ const result = await invoke('ai_move', {
 
 ## 🤖 Android 支持
 
-Android 平台通过从 APK assets 中提取 rapfi 二进制文件来支持 AI 功能，无需额外安装引擎。
+Android 平台通过从 APK 的 jniLibs 中加载 rapfi 二进制文件来支持 AI 功能。
 
-**支持的架构：** `aarch64` (ARM64)、`x86_64`
+**支持的架构：**
+- ✅ `arm64-v8a` (AArch64) - 2019年后大多数Android设备
+- ✅ `x86_64` - x86模拟器和部分平板设备
+- ❌ **不支持32位设备** (armeabi-v7a, x86)
+
+**系统要求：**
+- Android 7.0 (API 24) 或更高版本
+- 64位架构处理器
 
 **工作原理：**
-1. 首次启动时自动检测设备架构
-2. 从 `assets/binaries/` 提取对应架构的 rapfi 二进制到应用缓存目录
-3. 设置可执行权限 (chmod 755)
-4. 后续启动通过缓存检查跳过提取
-5. 提取失败时回退到默认路径查找（向后兼容）
+1. 应用启动时自动检测设备架构
+2. 从 APK 的 `jniLibs/{abi}/librapfi.so` 加载对应架构的引擎
+3. 通过 JNI 进程通信与引擎交互
+4. 无需额外提取或权限处理
+
+**为什么只支持64位？**
+- 2024年64位Android设备覆盖率超过87%
+- 简化维护，减少APK体积（使用ABI splits后从~50MB降至~25MB）
+- 符合Google Play 2019年8月后的64位要求
 
 **相关文件：**
-- `src-tauri/src/android_rapfi.rs` — Android 二进制提取模块（`#[cfg(target_os = "android")]`）
-- `src-tauri/binaries/rapfi-aarch64-linux-android` — ARM64 Android 二进制
-- `src-tauri/binaries/rapfi-x86_64-linux-android` — x86_64 Android 二进制
+- `src-tauri/src/android_rapfi.rs` — Android rapfi路径解析模块
+- `src-tauri/android/app-custom.gradle.kts` — Gradle构建配置
+- `src-tauri/binaries/` — Rapfi预编译二进制文件
 
 ## 🔄 更新 NNUE 权重
 

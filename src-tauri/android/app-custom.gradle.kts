@@ -10,6 +10,18 @@ import com.android.build.gradle.internal.tasks.factory.dependsOn
 
 // === Configure Android Extension ===
 configure<ApplicationExtension> {
+    // === ABI Splits ===
+    // Generate separate APKs for each architecture to reduce download size
+    // Users only download the APK for their device's architecture
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
     // === Packaging Options ===
     // Configure APK packaging to include native libraries in jniLibs
     packaging {
@@ -18,9 +30,7 @@ configure<ApplicationExtension> {
             // Prevent Gradle from stripping rapfi binaries (they're already stripped)
             // This also improves build performance by skipping redundant work
             keepDebugSymbols.add("*/arm64-v8a/librapfi.so")
-            keepDebugSymbols.add("*/armeabi-v7a/librapfi.so")
             keepDebugSymbols.add("*/x86_64/librapfi.so")
-            keepDebugSymbols.add("*/x86/librapfi.so")
         }
     }
 }
@@ -35,9 +45,7 @@ tasks.register("copyRapfiBinaries") {
     doLast {
         val archMap = mapOf(
             "arm64-v8a" to "../../../binaries/rapfi-aarch64-linux-android",
-            "armeabi-v7a" to "../../../binaries/rapfi-armv7-linux-androideabi",
-            "x86_64" to "../../../binaries/rapfi-x86_64-linux-android",
-            "x86" to "../../../binaries/rapfi-i686-linux-android"
+            "x86_64" to "../../../binaries/rapfi-x86_64-linux-android"
         )
 
         archMap.forEach { (abi, source) ->
@@ -65,9 +73,7 @@ tasks.register("copyRapfiBinaries") {
 
         val ndkArchMap = mapOf(
             "arm64-v8a" to "aarch64-linux-android",
-            "armeabi-v7a" to "arm-linux-androideabi",
-            "x86_64" to "x86_64-linux-android",
-            "x86" to "i686-linux-android"
+            "x86_64" to "x86_64-linux-android"
         )
 
         ndkArchMap.forEach { (abi, ndkArch) ->

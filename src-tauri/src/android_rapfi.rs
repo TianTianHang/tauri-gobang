@@ -9,7 +9,6 @@
 // /proc/self/maps 中显示 base.apk 而非 .so 路径，
 // 因此需要从 base.apk 路径推导 nativeLibraryDir。
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 pub fn get_rapfi_path() -> Result<PathBuf, String> {
@@ -105,13 +104,9 @@ fn current_abi() -> Result<String, String> {
         Ok("arm64-v8a".into())
     } else if cfg!(target_arch = "x86_64") {
         Ok("x86_64".into())
-    } else if cfg!(target_arch = "arm") {
-        Ok("armeabi-v7a".into())
-    } else if cfg!(target_arch = "x86") {
-        Ok("x86".into())
     } else {
         Err(format!(
-            "Unsupported architecture: {}",
+            "Unsupported 32-bit architecture: {}. This app only supports 64-bit Android devices (arm64-v8a, x86_64)",
             std::env::consts::ARCH
         ))
     }
