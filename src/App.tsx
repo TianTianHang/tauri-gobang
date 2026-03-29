@@ -20,17 +20,23 @@ import "./App.css";
 function App() {
   const [mode, setMode] = useState<GameMode>("menu");
   const [gameState, setGameState] = useState<GameState | null>(null);
+  // Ref to always access the latest gameState inside network event listeners,
+  // avoiding React closure traps where listeners capture stale state.
+  const gameStateRef = useRef(gameState);
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [aiThinking, setAiThinking] = useState(false);
   const [lastMove, setLastMove] = useState<{ row: number; col: number } | null>(null);
   const [localIp, setLocalIp] = useState("");
   const [networkError, setNetworkError] = useState("");
   const [networkLoading, setNetworkLoading] = useState(false);
-  const [undoRequested, setUndoRequested] = useState(false);
   const [restartRequested, setRestartRequested] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const unsubFns = useRef<UnlistenFn[]>([]);
   const haptic = useHapticFeedback();
+
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
 
   useEffect(() => {
     const unlistenAiMove = listen<{
@@ -87,7 +93,6 @@ function App() {
     setGameState(state);
     setLastMove(null);
     setAiThinking(false);
-    setUndoRequested(false);
     setRestartRequested(false);
   }, []);
 
@@ -105,7 +110,16 @@ function App() {
         listen<string>("network:opponent_moved", (event) => {
           const data = JSON.parse(event.payload);
           const { row, col } = data;
-          invoke<MoveResult>("make_move", { state: gameState, row, col })
+          const currentState = gameStateRef.current;
+          if (!currentState) {
+            console.error("opponent_moved: gameState is null, ignoring");
+            return;
+          }
+          if (currentState.status !== GameStatus.Playing) {
+            console.error("opponent_moved: game not in playing state, ignoring");
+            return;
+          }
+          invoke<MoveResult>("make_move", { state: currentState, row, col })
             .then((result) => {
               setGameState(result.state);
               setLastMove({ row, col });
@@ -115,22 +129,6 @@ function App() {
         listen<string>("network:disconnected", () => {
           setNetworkError("对手已断开连接");
           setMode("menu");
-        }),
-        listen<string>("network:undo_request", () => {
-          setUndoRequested(true);
-        }),
-        listen<string>("network:undo_accept", () => {
-          if (gameState) {
-            invoke<MoveResult>("undo_two_moves", { state: gameState })
-              .then((result) => {
-                setGameState(result.state);
-                setUndoRequested(false);
-              })
-              .catch(console.error);
-          }
-        }),
-        listen<string>("network:undo_reject", () => {
-          setUndoRequested(false);
         }),
         listen<string>("network:restart_request", () => {
           setRestartRequested(true);
@@ -150,7 +148,7 @@ function App() {
 
       setMode(newMode);
     },
-    [gameState, cleanupListeners, startNewGame]
+    [cleanupListeners, startNewGame]
   );
 
   const handleHostGame = useCallback(
@@ -208,6 +206,9 @@ function App() {
         }
       } catch (e) {
         console.error("Move error:", e);
+        if (isOnline) {
+          setNetworkError("网络发送失败，对手可能已断开连接");
+        }
       }
     },
     [gameState, aiThinking, isOnline, myColor, mode, difficulty]
@@ -244,16 +245,8 @@ function App() {
   }, [gameState]);
 
   const handleNewGame = useCallback(async () => {
-    if (isOnline) {
-      try {
-        await invoke<void>("network_send_restart_request");
-      } catch {
-        startNewGame();
-      }
-    } else {
-      startNewGame();
-    }
-  }, [isOnline, startNewGame]);
+    startNewGame();
+  }, [startNewGame]);
 
   const handleBackToMenu = useCallback(async () => {
     if (isOnline) {
@@ -268,18 +261,9 @@ function App() {
     setGameState(null);
     setLastMove(null);
     setAiThinking(false);
-    setUndoRequested(false);
     setRestartRequested(false);
     setMenuOpen(false);
   }, [isOnline, cleanupListeners]);
-
-  const handleUndoRequest = useCallback(async () => {
-    try {
-      await invoke<void>("network_send_undo_request");
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
 
   const handleRestartRequest = useCallback(async () => {
     try {
@@ -289,48 +273,19 @@ function App() {
     }
   }, []);
 
-  const handleAcceptUndo = useCallback(async () => {
-    try {
-      await invoke<void>("network_send_undo_accept");
-      if (gameState) {
-        const result = await invoke<MoveResult>("undo_two_moves", { state: gameState });
-        setGameState(result.state);
-        const history = result.state.history;
-        if (history.length > 0) {
-          const last = history[history.length - 1];
-          setLastMove({ row: last.row, col: last.col });
-        } else {
-          setLastMove(null);
-        }
-      }
-      setUndoRequested(false);
-    } catch (e) {
-      console.error(e);
-    }
-  }, [gameState]);
-
-  const handleRejectUndo = useCallback(async () => {
-    try {
-      await invoke<void>("network_send_undo_reject");
-    } catch (e) {
-      console.error(e);
-    }
-    setUndoRequested(false);
-  }, []);
-
   const handleAcceptRestart = useCallback(async () => {
     try {
       await invoke<void>("network_send_restart_accept");
+      startNewGame();
+      setRestartRequested(false);
     } catch (e) {
       console.error(e);
     }
-    startNewGame();
-    setRestartRequested(false);
   }, [startNewGame]);
 
   const handleRejectRestart = useCallback(async () => {
     try {
-      await invoke<void>("network_send_restart_request");
+      await invoke<void>("network_send_restart_reject");
     } catch (e) {
       console.error(e);
     }
@@ -409,13 +364,8 @@ function App() {
         onBackToMenu={handleBackToMenu}
         mode={mode}
         aiThinking={aiThinking}
-        myColor={myColor}
-        onUndoRequest={isOnline ? handleUndoRequest : undefined}
         onRestartRequest={isOnline ? handleRestartRequest : undefined}
-        undoRequested={undoRequested}
         restartRequested={restartRequested}
-        onAcceptUndo={handleAcceptUndo}
-        onRejectUndo={handleRejectUndo}
         onAcceptRestart={handleAcceptRestart}
         onRejectRestart={handleRejectRestart}
       />

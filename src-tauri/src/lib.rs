@@ -155,27 +155,6 @@ fn network_send_move(
 }
 
 #[tauri::command]
-fn network_send_undo_request(
-    state: tauri::State<'_, Arc<Mutex<NetworkState>>>,
-) -> Result<(), String> {
-    network::send_message(&state.inner(), &network::NetworkMessage::UndoRequest)
-}
-
-#[tauri::command]
-fn network_send_undo_accept(
-    state: tauri::State<'_, Arc<Mutex<NetworkState>>>,
-) -> Result<(), String> {
-    network::send_message(&state.inner(), &network::NetworkMessage::UndoAccept)
-}
-
-#[tauri::command]
-fn network_send_undo_reject(
-    state: tauri::State<'_, Arc<Mutex<NetworkState>>>,
-) -> Result<(), String> {
-    network::send_message(&state.inner(), &network::NetworkMessage::UndoReject)
-}
-
-#[tauri::command]
 fn network_send_restart_request(
     state: tauri::State<'_, Arc<Mutex<NetworkState>>>,
 ) -> Result<(), String> {
@@ -187,6 +166,13 @@ fn network_send_restart_accept(
     state: tauri::State<'_, Arc<Mutex<NetworkState>>>,
 ) -> Result<(), String> {
     network::send_message(&state.inner(), &network::NetworkMessage::RestartAccept)
+}
+
+#[tauri::command]
+fn network_send_restart_reject(
+    state: tauri::State<'_, Arc<Mutex<NetworkState>>>,
+) -> Result<(), String> {
+    network::send_message(&state.inner(), &network::NetworkMessage::RestartReject)
 }
 
 #[tauri::command]
@@ -220,11 +206,9 @@ pub fn run() {
             network_host,
             network_join,
             network_send_move,
-            network_send_undo_request,
-            network_send_undo_accept,
-            network_send_undo_reject,
             network_send_restart_request,
             network_send_restart_accept,
+            network_send_restart_reject,
             network_disconnect,
             network_is_connected,
             get_local_ip,

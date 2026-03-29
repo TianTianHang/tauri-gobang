@@ -21,16 +21,10 @@ macro_rules! debugln {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum NetworkMessage {
-    Join { color: String },
     Move { row: usize, col: usize },
-    UndoRequest,
-    UndoAccept,
-    UndoReject,
     RestartRequest,
     RestartAccept,
     RestartReject,
-    Chat { message: String },
-    GameOver { winner: String },
     Disconnect,
 }
 
@@ -94,11 +88,22 @@ pub fn host_game(
 
         loop {
             match listener.accept() {
-                Ok((stream, addr)) => {
-                    let connected = Arc::clone(&connected);
-                    connected.store(true, Ordering::SeqCst);
-                    let _ = app.emit("network:opponent_joined", addr.to_string());
-
+                Ok((stream, _addr)) => {
+                    // Clone the accepted stream so we can keep a reference in
+                    // NetworkState for sending messages. The original stream is
+                    // passed to handle_connection for receiving.
+                    let stream_clone = match stream.try_clone() {
+                        Ok(s) => s,
+                        Err(e) => {
+                            debugln!("Failed to clone accepted stream: {}", e);
+                            break;
+                        }
+                    };
+                    {
+                        let mut ns = state_clone.lock().unwrap();
+                        ns.stream = Some(stream_clone);
+                        ns.connected.store(true, Ordering::SeqCst);
+                    }
                     let app_clone = app.clone();
                     let conn = Arc::clone(&connected);
                     handle_connection(stream, app_clone, conn);
@@ -162,15 +167,9 @@ fn handle_connection(stream: TcpStream, app: AppHandle, connected: Arc<AtomicBoo
                         Ok(msg) => {
                             let event = match msg {
                                 NetworkMessage::Move { .. } => "network:opponent_moved",
-                                NetworkMessage::UndoRequest => "network:undo_request",
-                                NetworkMessage::UndoAccept => "network:undo_accept",
-                                NetworkMessage::UndoReject => "network:undo_reject",
                                 NetworkMessage::RestartRequest => "network:restart_request",
                                 NetworkMessage::RestartAccept => "network:restart_accept",
                                 NetworkMessage::RestartReject => "network:restart_reject",
-                                NetworkMessage::Chat { .. } => "network:chat",
-                                NetworkMessage::GameOver { .. } => "network:game_over",
-                                NetworkMessage::Join { .. } => "network:opponent_joined",
                                 NetworkMessage::Disconnect => {
                                     connected.store(false, Ordering::SeqCst);
                                     "network:disconnected"
@@ -196,20 +195,27 @@ fn handle_connection(stream: TcpStream, app: AppHandle, connected: Arc<AtomicBoo
 pub fn send_message(state: &Arc<Mutex<NetworkState>>, msg: &NetworkMessage) -> Result<(), String> {
     let ns = state.lock().map_err(|e| e.to_string())?;
 
-    let stream = if ns.is_host {
-        let listener = ns.listener.as_ref().ok_or("Not hosting")?;
-        listener
-            .incoming()
-            .next()
-            .ok_or("No active connection")?
-            .map_err(|e| e.to_string())?
-    } else {
-        ns.stream
-            .as_ref()
-            .ok_or("Not connected")?
-            .try_clone()
-            .map_err(|e| e.to_string())?
-    };
+    if !ns.connected.load(Ordering::SeqCst) {
+        let err_msg = if ns.is_host {
+            "No opponent connected"
+        } else {
+            "Disconnected from host"
+        };
+        return Err(err_msg.to_string());
+    }
+
+    let stream = ns
+        .stream
+        .as_ref()
+        .ok_or_else(|| {
+            if ns.is_host {
+                "No opponent connected".to_string()
+            } else {
+                "Disconnected from host".to_string()
+            }
+        })?
+        .try_clone()
+        .map_err(|e| format!("Failed to clone stream: {}", e))?;
 
     let mut writer = stream.try_clone().map_err(|e| e.to_string())?;
     let json = serde_json::to_string(msg).map_err(|e| e.to_string())?;

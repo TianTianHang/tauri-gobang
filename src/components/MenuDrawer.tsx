@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import {
-  Cell,
   GameState,
   GameMode,
   Difficulty,
@@ -19,13 +18,8 @@ interface MenuDrawerProps {
   onBackToMenu: () => void;
   mode: GameMode;
   aiThinking: boolean;
-  myColor?: Cell;
-  onUndoRequest?: () => void;
   onRestartRequest?: () => void;
-  undoRequested?: boolean;
   restartRequested?: boolean;
-  onAcceptUndo?: () => void;
-  onRejectUndo?: () => void;
   onAcceptRestart?: () => void;
   onRejectRestart?: () => void;
 }
@@ -41,23 +35,14 @@ function MenuDrawer({
   onBackToMenu,
   mode,
   aiThinking,
-  myColor,
-  onUndoRequest,
   onRestartRequest,
-  undoRequested,
   restartRequested,
-  onAcceptUndo,
-  onRejectUndo,
   onAcceptRestart,
   onRejectRestart,
 }: MenuDrawerProps) {
   const drawerRef = useRef<HTMLDivElement>(null);
 
   const isOnline = mode === "online_host" || mode === "online_client";
-  const isMyTurn =
-    !isOnline ||
-    gameState.current_player === myColor ||
-    gameState.status !== "playing";
 
   useEffect(() => {
     if (!isOpen) return;
@@ -118,15 +103,6 @@ function MenuDrawer({
                   悔棋
                 </button>
               )}
-              {isOnline && onUndoRequest && (
-                <button
-                  className="drawer-btn"
-                  onClick={() => { onUndoRequest(); onClose(); }}
-                  disabled={!isMyTurn || undoRequested}
-                >
-                  悔棋请求
-                </button>
-              )}
               {isOnline && onRestartRequest && (
                 <button
                   className="drawer-btn"
@@ -138,20 +114,6 @@ function MenuDrawer({
               )}
             </div>
           </div>
-
-          {undoRequested && (
-            <div className="drawer-section request-section">
-              <p className="request-text">对方请求悔棋</p>
-              <div className="request-btns">
-                <button className="drawer-btn drawer-btn-primary" onClick={() => { onAcceptUndo?.(); onClose(); }}>
-                  同意
-                </button>
-                <button className="drawer-btn" onClick={() => { onRejectUndo?.(); onClose(); }}>
-                  拒绝
-                </button>
-              </div>
-            </div>
-          )}
 
           {restartRequested && (
             <div className="drawer-section request-section">

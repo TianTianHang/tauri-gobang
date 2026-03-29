@@ -12,12 +12,8 @@ interface GameInfoProps {
   aiThinking: boolean;
   mode: GameMode;
   myColor?: Cell;
-  onUndoRequest?: () => void;
   onRestartRequest?: () => void;
-  undoRequested?: boolean;
   restartRequested?: boolean;
-  onAcceptUndo?: () => void;
-  onRejectUndo?: () => void;
   onAcceptRestart?: () => void;
   onRejectRestart?: () => void;
 }
@@ -32,21 +28,13 @@ function GameInfo({
   aiThinking,
   mode,
   myColor,
-  onUndoRequest,
   onRestartRequest,
-  undoRequested,
   restartRequested,
-  onAcceptUndo,
-  onRejectUndo,
   onAcceptRestart,
   onRejectRestart,
 }: GameInfoProps) {
   const statusText = getStatusText(gameState, mode, myColor);
   const isOnline = mode === "online_host" || mode === "online_client";
-  const isMyTurn =
-    !isOnline ||
-    gameState.current_player === myColor ||
-    gameState.status !== GameStatus.Playing;
 
   return (
     <div className="game-info">
@@ -88,20 +76,6 @@ function GameInfo({
         </div>
       )}
 
-      {undoRequested && (
-        <div className="request-dialog">
-          <p>对方请求悔棋</p>
-          <div className="request-buttons">
-            <button className="btn-accept" onClick={onAcceptUndo}>
-              同意
-            </button>
-            <button className="btn-reject" onClick={onRejectUndo}>
-              拒绝
-            </button>
-          </div>
-        </div>
-      )}
-
       {restartRequested && (
         <div className="request-dialog">
           <p>对方请求重新开始</p>
@@ -120,11 +94,6 @@ function GameInfo({
         {mode === "ai" && (
           <button onClick={onUndo} disabled={gameState.history.length === 0 || aiThinking}>
             悔棋
-          </button>
-        )}
-        {isOnline && onUndoRequest && (
-          <button onClick={onUndoRequest} disabled={!isMyTurn || undoRequested}>
-            悔棋请求
           </button>
         )}
         {isOnline && onRestartRequest && (
