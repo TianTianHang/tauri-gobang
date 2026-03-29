@@ -38,6 +38,13 @@ export interface AiMoveResult {
 
 export type Difficulty = "easy" | "medium" | "hard";
 
+export type ConnectionStatus = "connected" | "connecting" | "disconnected";
+
+export interface ConnectionInfo {
+  ip: string;
+  port: number;
+}
+
 export type GameMode = "menu" | "ai" | "online_host" | "online_client" | "host_setup" | "join_setup";
 
 export const BOARD_SIZE = 15;

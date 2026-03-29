@@ -36,7 +36,8 @@
     ],
     "resources": [
       "binaries/config.toml",
-      "binaries/*.bin.lz4"
+      "binaries/model210901.bin",
+      "binaries/mix9svqfreestyle_bsmix.bin.lz4"
     ]
   }
 }

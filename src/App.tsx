@@ -8,12 +8,15 @@ import {
   Cell,
   GameStatus,
   MoveResult,
+  ConnectionInfo,
+  ConnectionStatus,
 } from "./types/game";
 import MainMenu from "./components/MainMenu";
 import GameBoard from "./components/GameBoard";
 import StatusBar from "./components/StatusBar";
 import MenuDrawer from "./components/MenuDrawer";
 import NetworkSetup from "./components/NetworkSetup";
+import GameResultModal from "./components/GameResultModal";
 import { useHapticFeedback } from "./hooks/useHapticFeedback";
 import "./App.css";
 
@@ -31,12 +34,22 @@ function App() {
   const [networkLoading, setNetworkLoading] = useState(false);
   const [restartRequested, setRestartRequested] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected");
+  const [gameDuration, setGameDuration] = useState<number>(0);
+  const gameStartTimeRef = useRef<number>(Date.now());
   const unsubFns = useRef<UnlistenFn[]>([]);
   const haptic = useHapticFeedback();
 
   useEffect(() => {
     gameStateRef.current = gameState;
   }, [gameState]);
+
+  useEffect(() => {
+    if (gameState && gameState.status !== GameStatus.Playing) {
+      setGameDuration(Math.floor((Date.now() - gameStartTimeRef.current) / 1000));
+    }
+  }, [gameState?.status]);
 
   useEffect(() => {
     const unlistenAiMove = listen<{
@@ -94,6 +107,8 @@ function App() {
     setLastMove(null);
     setAiThinking(false);
     setRestartRequested(false);
+    gameStartTimeRef.current = Date.now();
+    setGameDuration(0);
   }, []);
 
   const handlePlayAI = useCallback(() => {
@@ -128,6 +143,7 @@ function App() {
         }),
         listen<string>("network:disconnected", () => {
           setNetworkError("对手已断开连接");
+          setConnectionStatus("disconnected");
           setMode("menu");
         }),
         listen<string>("network:restart_request", () => {
@@ -155,31 +171,39 @@ function App() {
     async (port: number) => {
       setNetworkError("");
       setNetworkLoading(true);
+      setConnectionInfo({ ip: localIp, port });
+      setConnectionStatus("connecting");
       try {
         await invoke<string>("network_host", { port });
         setupNetworkListeners("online_host");
         await startNewGame();
         setNetworkLoading(false);
+        setConnectionStatus("connected");
       } catch (e) {
         setNetworkError(String(e));
         setNetworkLoading(false);
+        setConnectionStatus("disconnected");
       }
     },
-    [setupNetworkListeners, startNewGame]
+    [setupNetworkListeners, startNewGame, localIp]
   );
 
   const handleJoinGame = useCallback(
     async (ip: string, port: number) => {
       setNetworkError("");
       setNetworkLoading(true);
+      setConnectionInfo({ ip, port });
+      setConnectionStatus("connecting");
       try {
         await invoke<void>("network_join", { ip, port });
         setupNetworkListeners("online_client");
         await startNewGame();
         setNetworkLoading(false);
+        setConnectionStatus("connected");
       } catch (e) {
         setNetworkError(String(e));
         setNetworkLoading(false);
+        setConnectionStatus("disconnected");
       }
     },
     [setupNetworkListeners, startNewGame]
@@ -263,6 +287,8 @@ function App() {
     setAiThinking(false);
     setRestartRequested(false);
     setMenuOpen(false);
+    setConnectionInfo(null);
+    setConnectionStatus("disconnected");
   }, [isOnline, cleanupListeners]);
 
   const handleRestartRequest = useCallback(async () => {
@@ -345,6 +371,8 @@ function App() {
         myColor={myColor}
         onMenuOpen={handleMenuOpen}
         menuOpen={menuOpen}
+        connectionInfo={connectionInfo}
+        connectionStatus={connectionStatus}
       />
       <GameBoard
         gameState={gameState}
@@ -369,6 +397,16 @@ function App() {
         onAcceptRestart={handleAcceptRestart}
         onRejectRestart={handleRejectRestart}
       />
+      {gameState.status !== GameStatus.Playing && (
+        <GameResultModal
+          gameState={gameState}
+          mode={mode}
+          myColor={myColor}
+          gameDuration={gameDuration}
+          onNewGame={handleNewGame}
+          onBackToMenu={handleBackToMenu}
+        />
+      )}
     </div>
   );
 }

@@ -18,6 +18,11 @@
   --accent-hover: #C49B2B;
   --text-on-accent: #FFFFFF;
   --safe-area-top: max(env(safe-area-inset-top, 0px), 24px);
+  --status-connected: #22C55E;
+  --status-connecting: #F59E0B;
+  --status-disconnected: #EF4444;
+  --modal-bg-glass: rgba(255, 255, 255, 0.85);
+  --modal-victory-gradient: linear-gradient(135deg, #D4AF37 0%, #F59E0B 100%);
 
   color: var(--text-primary);
   background-color: var(--bg-primary);
@@ -67,6 +72,7 @@
     --accent: #D4AF37;
     --accent-hover: #E5C158;
     --text-on-accent: #000000;
+    --modal-bg-glass: rgba(0, 0, 0, 0.85);
   }
 }
 

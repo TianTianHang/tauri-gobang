@@ -1,6 +1,7 @@
+import type { ReactNode } from "react";
 import { Cell, GameState, GameStatus, Difficulty, DIFFICULTY_LABELS, GameMode } from "../types/game";
 import "./GameInfo.css";
-import { BackIcon } from "./Icons";
+import { BackIcon, BlackStoneIcon, WhiteStoneIcon } from "./Icons";
 
 interface GameInfoProps {
   gameState: GameState;
@@ -107,7 +108,7 @@ function GameInfo({
   );
 }
 
-function getStatusText(state: GameState, mode: GameMode, myColor?: Cell): string {
+function getStatusText(state: GameState, mode: GameMode, myColor?: Cell): ReactNode {
   const isOnline = mode === "online_host" || mode === "online_client";
 
   switch (state.status) {
@@ -115,17 +116,19 @@ function getStatusText(state: GameState, mode: GameMode, myColor?: Cell): string
       if (isOnline && myColor) {
         return state.current_player === myColor ? "轮到你落子" : "等待对手落子...";
       }
-      return state.current_player === Cell.Black ? "● 黑棋落子" : "○ 白棋落子";
+      return state.current_player === Cell.Black
+        ? <><BlackStoneIcon className="stone-icon" /> 黑棋落子</>
+        : <><WhiteStoneIcon className="stone-icon" /> 白棋落子</>;
     case GameStatus.BlackWins:
       if (isOnline && myColor) {
         return myColor === Cell.Black ? "🎉 你赢了！" : "你输了...";
       }
-      return "● 黑棋胜！";
+      return <><BlackStoneIcon className="stone-icon" /> 黑棋胜！</>;
     case GameStatus.WhiteWins:
       if (isOnline && myColor) {
         return myColor === Cell.White ? "🎉 你赢了！" : "你输了...";
       }
-      return "○ 白棋胜！";
+      return <><WhiteStoneIcon className="stone-icon" /> 白棋胜！</>;
     case GameStatus.Draw:
       return "平局！";
   }

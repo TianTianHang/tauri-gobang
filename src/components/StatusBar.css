@@ -25,29 +25,11 @@
   text-overflow: ellipsis;
 }
 
-.stone-symbol {
-  font-size: 18px;
-  line-height: 1;
-}
-
-.stone-black {
-  color: #222;
-}
-
-.stone-white {
-  color: #ddd;
-  text-shadow: 0 0 1px rgba(0, 0, 0, 0.5);
-}
-
-@media (prefers-color-scheme: dark) {
-  .stone-black {
-    color: #ccc;
-  }
-
-  .stone-white {
-    color: #e0e0e0;
-    text-shadow: 0 0 1px rgba(255, 255, 255, 0.3);
-  }
+.stone-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+  vertical-align: text-bottom;
 }
 
 .thinking-indicator {
@@ -88,9 +70,93 @@
   outline-offset: 2px;
 }
 
+.connection-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.connection-dot.connected {
+  background: var(--status-connected);
+  box-shadow: 0 0 4px var(--status-connected);
+}
+
+.connection-dot.connecting {
+  background: var(--status-connecting);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.connection-dot.disconnected {
+  background: var(--status-disconnected);
+}
+
+.ip-display {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 8px 4px;
+  min-height: 44px;
+  min-width: 44px;
+  border-radius: 6px;
+  transition: background-color 150ms ease;
+}
+
+.ip-display:hover {
+  background: var(--bg-secondary);
+}
+
+.ip-display:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ip-prefix {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.ip-text {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.copy-feedback {
+  color: var(--status-connected);
+  font-weight: 600;
+  font-size: 13px;
+}
+
 @media (min-width: 768px) {
   .status-bar {
     padding: 0 24px;
+  }
+
+  .connection-info {
+    gap: 8px;
+  }
+}
+
+@media (max-width: 767px) {
+  .ip-prefix {
+    display: none;
+  }
+
+  .ip-text {
+    font-size: 12px;
   }
 }
 
