@@ -1,11 +1,9 @@
 import { useEffect, useRef, useCallback } from "react";
 import { Cell, GameState, BOARD_SIZE } from "../types/game";
+import { useBoardSize } from "../hooks/useBoardSize";
+import { useTouchPreview } from "../hooks/useTouchPreview";
 import "./GameBoard.css";
 
-const CELL_SIZE = 40;
-const PADDING = 30;
-const PIECE_RADIUS = CELL_SIZE * 0.43;
-const CANVAS_SIZE = CELL_SIZE * (BOARD_SIZE - 1) + PADDING * 2;
 const STAR_POINTS = [
   [3, 3],
   [3, 11],
@@ -19,60 +17,66 @@ interface GameBoardProps {
   onCellClick: (row: number, col: number) => void;
   disabled: boolean;
   lastMove?: { row: number; col: number } | null;
+  onPiecePlaced?: () => void;
 }
 
-function GameBoard({ gameState, onCellClick, disabled, lastMove }: GameBoardProps) {
+function GameBoard({ gameState, onCellClick, disabled, lastMove, onPiecePlaced }: GameBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const hoverRef = useRef<{ row: number; col: number } | null>(null);
+  const { canvas: canvasSize, cell: cellSize, padding } = useBoardSize();
+  const pieceRadius = cellSize * 0.43;
 
-  const getCellFromPixel = useCallback(
-    (x: number, y: number): { row: number; col: number } | null => {
-      const col = Math.round((x - PADDING) / CELL_SIZE);
-      const row = Math.round((y - PADDING) / CELL_SIZE);
-      if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) return null;
-      const cx = PADDING + col * CELL_SIZE;
-      const cy = PADDING + row * CELL_SIZE;
-      const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
-      if (dist > CELL_SIZE * 0.48) return null;
-      return { row, col };
+  const {
+    hoverRef,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+    getCellFromPixel,
+  } = useTouchPreview({
+    padding,
+    cellSize,
+    disabled,
+    onCellClick: (row, col) => {
+      if (disabled) return;
+      if (gameState.board[row][col] !== Cell.Empty) return;
+      onPiecePlaced?.();
+      onCellClick(row, col);
     },
-    []
-  );
+  });
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || canvasSize === 0) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    ctx.clearRect(0, 0, canvasSize, canvasSize);
 
-    const bgGrad = ctx.createLinearGradient(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    const bgGrad = ctx.createLinearGradient(0, 0, canvasSize, canvasSize);
     bgGrad.addColorStop(0, "#DEB887");
     bgGrad.addColorStop(1, "#D2A96A");
     ctx.fillStyle = bgGrad;
-    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    ctx.fillRect(0, 0, canvasSize, canvasSize);
 
     ctx.strokeStyle = "#5C4033";
     ctx.lineWidth = 1;
 
     for (let i = 0; i < BOARD_SIZE; i++) {
-      const pos = PADDING + i * CELL_SIZE;
+      const pos = padding + i * cellSize;
       ctx.beginPath();
-      ctx.moveTo(PADDING, pos);
-      ctx.lineTo(PADDING + (BOARD_SIZE - 1) * CELL_SIZE, pos);
+      ctx.moveTo(padding, pos);
+      ctx.lineTo(padding + (BOARD_SIZE - 1) * cellSize, pos);
       ctx.stroke();
 
       ctx.beginPath();
-      ctx.moveTo(pos, PADDING);
-      ctx.lineTo(pos, PADDING + (BOARD_SIZE - 1) * CELL_SIZE);
+      ctx.moveTo(pos, padding);
+      ctx.lineTo(pos, padding + (BOARD_SIZE - 1) * cellSize);
       ctx.stroke();
     }
 
     ctx.fillStyle = "#5C4033";
     for (const [sr, sc] of STAR_POINTS) {
       ctx.beginPath();
-      ctx.arc(PADDING + sc * CELL_SIZE, PADDING + sr * CELL_SIZE, 4, 0, Math.PI * 2);
+      ctx.arc(padding + sc * cellSize, padding + sr * cellSize, Math.max(3, cellSize * 0.1), 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -80,35 +84,37 @@ function GameBoard({ gameState, onCellClick, disabled, lastMove }: GameBoardProp
       for (let col = 0; col < BOARD_SIZE; col++) {
         const cell = gameState.board[row][col];
         if (cell === Cell.Empty) continue;
-        drawPiece(ctx, row, col, cell);
+        drawPiece(ctx, row, col, cell, 1, padding, cellSize, pieceRadius);
       }
-    }
-
-    if (lastMove) {
-      const cx = PADDING + lastMove.col * CELL_SIZE;
-      const cy = PADDING + lastMove.row * CELL_SIZE;
-      ctx.fillStyle = "#FF4444";
-      ctx.beginPath();
-      ctx.arc(cx, cy, 4, 0, Math.PI * 2);
-      ctx.fill();
     }
 
     if (hoverRef.current && !disabled && gameState.status === "playing") {
       const { row, col } = hoverRef.current;
       if (gameState.board[row][col] === Cell.Empty) {
-        drawPiece(
-          ctx,
-          row,
-          col,
-          gameState.current_player,
-          0.35
-        );
+        drawPiece(ctx, row, col, gameState.current_player, 0.35, padding, cellSize, pieceRadius);
       }
     }
-  }, [gameState, disabled, lastMove]);
+
+    if (lastMove) {
+      const cx = padding + lastMove.col * cellSize;
+      const cy = padding + lastMove.row * cellSize;
+      ctx.fillStyle = "#FF4444";
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.max(3, cellSize * 0.1), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+
+  }, [canvasSize, cellSize, padding, pieceRadius, gameState, disabled, lastMove, hoverRef]);
 
   useEffect(() => {
     draw();
+  }, [draw]);
+
+  useEffect(() => {
+    const handleResize = () => draw();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, [draw]);
 
   const handleMouseMove = useCallback(
@@ -127,13 +133,13 @@ function GameBoard({ gameState, onCellClick, disabled, lastMove }: GameBoardProp
         draw();
       }
     },
-    [getCellFromPixel, draw]
+    [getCellFromPixel, draw, hoverRef]
   );
 
   const handleMouseLeave = useCallback(() => {
     hoverRef.current = null;
     draw();
-  }, [draw]);
+  }, [draw, hoverRef]);
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -147,22 +153,32 @@ function GameBoard({ gameState, onCellClick, disabled, lastMove }: GameBoardProp
       const y = (e.clientY - rect.top) * scaleY;
       const cell = getCellFromPixel(x, y);
       if (cell) {
+        if (gameState.board[cell.row][cell.col] !== Cell.Empty) return;
+        onPiecePlaced?.();
         onCellClick(cell.row, cell.col);
       }
     },
-    [disabled, getCellFromPixel, onCellClick]
+    [disabled, getCellFromPixel, onCellClick, onPiecePlaced, gameState.board]
   );
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={CANVAS_SIZE}
-      height={CANVAS_SIZE}
-      className="game-board"
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      onClick={handleClick}
-    />
+    <div className="game-board-wrapper">
+      <canvas
+        ref={canvasRef}
+        width={canvasSize}
+        height={canvasSize}
+        className="game-board"
+        role="grid"
+        aria-label="五子棋棋盘，15行15列"
+        aria-description={`当前${gameState.current_player === Cell.Black ? "黑棋" : "白棋"}落子，共${gameState.history.length}步`}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        onClick={handleClick}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      />
+    </div>
   );
 }
 
@@ -171,11 +187,13 @@ function drawPiece(
   row: number,
   col: number,
   player: Cell,
-  alpha: number = 1
+  alpha: number,
+  padding: number,
+  cellSize: number,
+  radius: number
 ) {
-  const cx = PADDING + col * CELL_SIZE;
-  const cy = PADDING + row * CELL_SIZE;
-  const r = PIECE_RADIUS;
+  const cx = padding + col * cellSize;
+  const cy = padding + row * cellSize;
 
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -186,12 +204,12 @@ function drawPiece(
   ctx.shadowOffsetY = 2;
 
   const grad = ctx.createRadialGradient(
-    cx - r * 0.3,
-    cy - r * 0.3,
-    r * 0.1,
+    cx - radius * 0.3,
+    cy - radius * 0.3,
+    radius * 0.1,
     cx,
     cy,
-    r
+    radius
   );
 
   if (player === Cell.Black) {
@@ -204,7 +222,7 @@ function drawPiece(
 
   ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();

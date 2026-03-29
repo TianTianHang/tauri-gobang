@@ -10,18 +10,6 @@ import com.android.build.gradle.internal.tasks.factory.dependsOn
 
 // === Configure Android Extension ===
 configure<ApplicationExtension> {
-    // === ABI Splits ===
-    // Generate separate APKs for each architecture to reduce download size
-    // Users only download the APK for their device's architecture
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "x86_64")
-            isUniversalApk = false
-        }
-    }
-
     // === Packaging Options ===
     // Configure APK packaging to include native libraries in jniLibs
     packaging {

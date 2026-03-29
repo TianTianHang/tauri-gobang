@@ -7,15 +7,17 @@
   font-weight: 400;
   touch-action: manipulation;
 
-  --text-primary: #171717;
-  --text-secondary: #404040;
+  --text-primary: #0C4A6E;
+  --text-secondary: #475569;
   --bg-primary: #FFFFFF;
   --bg-secondary: #F5F5F5;
+  --bg-elevated: #FFFFFF;
   --panel-bg: #FFFFFF;
   --border: #E5E5E5;
   --accent: #D4AF37;
   --accent-hover: #C49B2B;
   --text-on-accent: #FFFFFF;
+  --safe-area-top: max(env(safe-area-inset-top, 0px), 24px);
 
   color: var(--text-primary);
   background-color: var(--bg-primary);
@@ -38,10 +40,10 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 16px;
-  padding: 16px;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg-primary);
+  overflow: hidden;
 }
 
 .setup-page {
@@ -49,29 +51,29 @@
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg-primary);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text-primary: #E5E5E5;
+    --text-primary: #FFFFFF;
     --text-secondary: #A0A0A0;
-    --bg-primary: #0A0A0A;
-    --bg-secondary: #1A1A1A;
-    --panel-bg: #0A0A0A;
+    --bg-primary: #000000;
+    --bg-secondary: #121212;
+    --bg-elevated: #1E1E1E;
+    --panel-bg: #000000;
     --border: #2A2A2A;
     --accent: #D4AF37;
     --accent-hover: #E5C158;
-    --text-on-accent: #0A0A0A;
+    --text-on-accent: #000000;
   }
 }
 
-@media (min-width: 768px) {
-  .game-page {
-    flex-direction: row;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 24px;
-    padding: 24px;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

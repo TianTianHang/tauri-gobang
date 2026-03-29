@@ -11,8 +11,10 @@ import {
 } from "./types/game";
 import MainMenu from "./components/MainMenu";
 import GameBoard from "./components/GameBoard";
-import GameInfo from "./components/GameInfo";
+import StatusBar from "./components/StatusBar";
+import MenuDrawer from "./components/MenuDrawer";
 import NetworkSetup from "./components/NetworkSetup";
+import { useHapticFeedback } from "./hooks/useHapticFeedback";
 import "./App.css";
 
 function App() {
@@ -26,7 +28,9 @@ function App() {
   const [networkLoading, setNetworkLoading] = useState(false);
   const [undoRequested, setUndoRequested] = useState(false);
   const [restartRequested, setRestartRequested] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const unsubFns = useRef<UnlistenFn[]>([]);
+  const haptic = useHapticFeedback();
 
   useEffect(() => {
     const unlistenAiMove = listen<{
@@ -38,6 +42,10 @@ function App() {
       setGameState(event.payload.state);
       setLastMove({ row: event.payload.row, col: event.payload.col });
       setAiThinking(false);
+      const status = event.payload.state.status;
+      if (status === GameStatus.BlackWins || status === GameStatus.WhiteWins) {
+        haptic.win();
+      }
     });
 
     const unlistenAiError = listen<string>("ai:move_error", (event) => {
@@ -49,7 +57,7 @@ function App() {
       unlistenAiMove.then((fn) => fn());
       unlistenAiError.then((fn) => fn());
     };
-  }, []);
+  }, [haptic]);
 
   const isOnline = mode === "online_host" || mode === "online_client";
   const myColor = mode === "online_host" ? Cell.Black : mode === "online_client" ? Cell.White : undefined;
@@ -205,6 +213,19 @@ function App() {
     [gameState, aiThinking, isOnline, myColor, mode, difficulty]
   );
 
+  const handlePiecePlaced = useCallback(() => {
+    haptic.place();
+  }, [haptic]);
+
+  const handleMenuOpen = useCallback(() => {
+    haptic.menuOpen();
+    setMenuOpen(true);
+  }, [haptic]);
+
+  const handleMenuClose = useCallback(() => {
+    setMenuOpen(false);
+  }, []);
+
   const handleUndo = useCallback(async () => {
     if (!gameState) return;
     try {
@@ -249,6 +270,7 @@ function App() {
     setAiThinking(false);
     setUndoRequested(false);
     setRestartRequested(false);
+    setMenuOpen(false);
   }, [isOnline, cleanupListeners]);
 
   const handleUndoRequest = useCallback(async () => {
@@ -308,7 +330,7 @@ function App() {
 
   const handleRejectRestart = useCallback(async () => {
     try {
-      await invoke<void>("network_send_restart_reject");
+      await invoke<void>("network_send_restart_request");
     } catch (e) {
       console.error(e);
     }
@@ -361,21 +383,32 @@ function App() {
 
   return (
     <div className="game-page">
+      <StatusBar
+        gameState={gameState}
+        aiThinking={aiThinking}
+        mode={mode}
+        myColor={myColor}
+        onMenuOpen={handleMenuOpen}
+        menuOpen={menuOpen}
+      />
       <GameBoard
         gameState={gameState}
         onCellClick={handleCellClick}
         disabled={aiThinking || (isOnline && !isMyTurn)}
         lastMove={lastMove}
+        onPiecePlaced={handlePiecePlaced}
       />
-      <GameInfo
+      <MenuDrawer
+        isOpen={menuOpen}
+        onClose={handleMenuClose}
         gameState={gameState}
         difficulty={difficulty}
         onDifficultyChange={setDifficulty}
         onUndo={handleUndo}
         onNewGame={handleNewGame}
         onBackToMenu={handleBackToMenu}
-        aiThinking={aiThinking}
         mode={mode}
+        aiThinking={aiThinking}
         myColor={myColor}
         onUndoRequest={isOnline ? handleUndoRequest : undefined}
         onRestartRequest={isOnline ? handleRestartRequest : undefined}
