@@ -32,6 +32,25 @@ pub enum ServerMessage {
         winner: Option<String>,
         reason: String,
     },
+    GameStateSync {
+        moves: Vec<MoveRecordSync>,
+        current_player: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveRecordSync {
+    pub row: u8,
+    pub col: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ErrorMessage {
+    InvalidToken { message: String },
+    UserNotFound { message: String },
+    RoomNotFound { message: String },
+    NotParticipant { message: String },
 }
 
 #[cfg(test)]

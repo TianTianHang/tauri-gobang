@@ -1,5 +1,6 @@
 mod auth;
 mod db;
+mod logging;
 mod protocol;
 mod room;
 mod types;
@@ -10,10 +11,15 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use axum::body::Body;
 use clap::Parser;
 use serde_json::json;
 use std::path::PathBuf;
+use std::time::Instant;
 use tower_http::cors::CorsLayer;
+use axum::middleware::Next;
+use axum::response::Response;
+use axum::http::Request;
 
 use auth::Sessions;
 use room::{Room, RoomMap};
@@ -110,6 +116,7 @@ password_min_length = 6
         .route("/api/rooms/{room_id}/join", post(join_room))
         .route("/game/{room_id}", get(ws::ws_handler))
         .layer(CorsLayer::permissive())
+        .layer(axum::middleware::from_fn(logging_middleware))
         .with_state(app_state);
 
     let addr = format!("{}:{}", cli.host, cli.port);
@@ -180,6 +187,50 @@ async fn shutdown_signal() {
         .expect("failed to install CTRL+C handler");
 }
 
+async fn logging_middleware(
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let request_id = logging::generate_request_id();
+    let method = request.method().clone();
+    let path = request.uri().path().to_string();
+    let start = Instant::now();
+
+    tracing::info!(
+        request_id = %request_id,
+        method = %method,
+        path = %path,
+        "request started"
+    );
+
+    let response = next.run(request).await;
+    let duration = start.elapsed();
+
+    let status = response.status();
+
+    if duration.as_secs_f64() > 1.0 {
+        tracing::warn!(
+            request_id = %request_id,
+            method = %method,
+            path = %path,
+            status = %status,
+            duration_ms = duration.as_millis(),
+            "slow request"
+        );
+    } else {
+        tracing::info!(
+            request_id = %request_id,
+            method = %method,
+            path = %path,
+            status = %status,
+            duration_ms = duration.as_millis(),
+            "request completed"
+        );
+    }
+
+    response
+}
+
 fn extract_token(headers: &axum::http::HeaderMap, query: &std::collections::HashMap<String, String>) -> Option<String> {
     if let Some(auth_header) = headers.get("Authorization") {
         let auth_str = auth_header.to_str().ok()?;
@@ -196,6 +247,7 @@ async fn register(
 ) -> impl IntoResponse {
     let username = req.username.trim().to_string();
     if username.len() < 3 || username.len() > 20 {
+        tracing::warn!(username = %username, "registration failed: username length invalid");
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "用户名长度需在 3-20 个字符之间"})),
@@ -203,6 +255,7 @@ async fn register(
     }
 
     if req.password.len() < 6 {
+        tracing::warn!(username = %username, "registration failed: password too short");
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "密码至少需要 6 个字符"})),
@@ -211,15 +264,19 @@ async fn register(
 
     let existing = db::find_user_by_username(&state.db, &username).await;
     match existing {
-        Ok(Some(_)) => (
-            StatusCode::CONFLICT,
-            Json(json!({"error": "用户名已存在"})),
-        ),
+        Ok(Some(_)) => {
+            tracing::warn!(username = %username, "registration failed: username already exists");
+            (
+                StatusCode::CONFLICT,
+                Json(json!({"error": "用户名已存在"})),
+            )
+        }
         Ok(None) => {
             let user_id = auth::generate_id();
             let hash = match auth::hash_password(&req.password).await {
                 Ok(h) => h,
                 Err(e) => {
+                    tracing::error!(error = %e, "registration failed: password hashing error");
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(json!({"error": e})),
@@ -228,6 +285,7 @@ async fn register(
             };
 
             if let Err(e) = db::insert_user(&state.db, &user_id, &username, &hash).await {
+                tracing::error!(error = %e, user_id = %user_id, "registration failed: database error");
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({"error": format!("注册失败: {}", e)})),
@@ -236,6 +294,8 @@ async fn register(
 
             let token = auth::generate_token();
             auth::store_session(&state.sessions, token.clone(), user_id.clone()).await;
+
+            tracing::info!(user_id = %user_id, username = %username, "user registered successfully");
 
             (
                 StatusCode::CREATED,
@@ -246,10 +306,13 @@ async fn register(
                 })),
             )
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": format!("数据库错误: {}", e)})),
-        ),
+        Err(e) => {
+            tracing::error!(error = %e, "registration failed: database error");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": format!("数据库错误: {}", e)})),
+            )
+        }
     }
 }
 
@@ -263,6 +326,9 @@ async fn login(
                 Ok(true) => {
                     let token = auth::generate_token();
                     auth::store_session(&state.sessions, token.clone(), user.id.clone()).await;
+
+                    tracing::info!(user_id = %user.id, username = %user.username, "user logged in successfully");
+
                     (
                         StatusCode::OK,
                         Json(json!({
@@ -272,24 +338,36 @@ async fn login(
                         })),
                     )
                 }
-                Ok(false) => (
-                    StatusCode::UNAUTHORIZED,
-                    Json(json!({"error": "用户名或密码错误"})),
-                ),
-                Err(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": e})),
-                ),
+                Ok(false) => {
+                    tracing::warn!(username = %user.username, "login failed: invalid password");
+                    (
+                        StatusCode::UNAUTHORIZED,
+                        Json(json!({"error": "用户名或密码错误"})),
+                    )
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "login failed: password verification error");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"error": e})),
+                    )
+                }
             }
         }
-        Ok(None) => (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "用户名或密码错误"})),
-        ),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": format!("数据库错误: {}", e)})),
-        ),
+        Ok(None) => {
+            tracing::warn!(username = %req.username.trim(), "login failed: user not found");
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "用户名或密码错误"})),
+            )
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "login failed: database error");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": format!("数据库错误: {}", e)})),
+            )
+        }
     }
 }
 
@@ -365,6 +443,7 @@ async fn create_room(
 
     let room_id = auth::generate_id();
     if let Err(e) = db::insert_room(&state.db, &room_id, &req.name, &user_id).await {
+        tracing::error!(error = %e, "room creation failed: database error");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"error": format!("创建房间失败: {}", e)})),
@@ -381,6 +460,13 @@ async fn create_room(
     );
 
     state.rooms.write().await.insert(room_id.clone(), room);
+
+    tracing::info!(
+        room_id = %room_id,
+        room_name = %req.name,
+        host_id = %user_id,
+        "room created successfully"
+    );
 
     (
         StatusCode::CREATED,
@@ -432,6 +518,7 @@ async fn join_room(
     let room = match rooms.get_mut(&room_id) {
         Some(r) => r,
         None => {
+            tracing::warn!(room_id = %room_id, "join room failed: room not found");
             return (
                 StatusCode::NOT_FOUND,
                 Json(json!({"error": "房间不存在"})),
@@ -440,6 +527,7 @@ async fn join_room(
     };
 
     if room.host_id == user_id {
+        tracing::warn!(room_id = %room_id, user_id = %user_id, "join room failed: cannot join own room");
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "无法加入自己创建的房间"})),
@@ -447,6 +535,7 @@ async fn join_room(
     }
 
     if room.status != crate::room::RoomStatus::Waiting {
+        tracing::warn!(room_id = %room_id, "join room failed: room not in waiting status");
         return (
             StatusCode::CONFLICT,
             Json(json!({"error": "房间不可加入"})),
@@ -454,6 +543,7 @@ async fn join_room(
     }
 
     if let Err(e) = db::update_room_player2(&state.db, &room_id, &user_id).await {
+        tracing::error!(error = %e, "join room failed: database error");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"error": format!("加入房间失败: {}", e)})),
@@ -461,19 +551,19 @@ async fn join_room(
     }
 
     let (tx, _rx) = tokio::sync::mpsc::channel::<String>(32);
-    room.add_player(user_id, username.clone(), tx);
+    room.add_player(user_id.clone(), username.clone(), tx);
+
+    tracing::info!(
+        room_id = %room_id,
+        user_id = %user_id,
+        "player joined room successfully"
+    );
 
     let host_username = room
         .players
         .get(&room.host_id)
         .map(|p| p.username.clone())
         .unwrap_or_default();
-
-    let joined_msg = crate::protocol::game::ServerMessage::OpponentJoined {
-        username,
-    };
-    let joined_json = serde_json::to_string(&joined_msg).unwrap();
-    room.send_to_player(&room.host_id, &joined_json).await;
 
     (
         StatusCode::OK,

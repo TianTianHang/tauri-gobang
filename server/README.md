@@ -116,6 +116,77 @@ EXPOSE 3001
 CMD ["gobang-server"]
 ```
 
+## 日志配置
+
+### 日志级别
+
+服务器使用 `tracing` 进行结构化日志记录。可通过 `RUST_LOG` 环境变量配置日志级别:
+
+```bash
+# 生产环境推荐: 仅记录重要事件
+RUST_LOG=info ./target/release/gobang-server
+
+# 调试模式: 包含详细调试信息
+RUST_LOG=debug ./target/release/gobang-server
+
+# 警告模式: 仅记录警告和错误
+RUST_LOG=warn ./target/release/gobang-server
+
+# 模块级别: 仅开启特定模块的调试日志
+RUST_LOG=gobang_server=debug ./target/release/gobang-server
+```
+
+### 日志输出示例
+
+请求 ID 关联日志（用于追踪单个请求的完整生命周期）:
+
+```
+2024-01-15T10:30:00Z INFO [request_id=550e8400-e29b-41d4-a716-446655440000] method=POST path=/api/register request started
+2024-01-15T10:30:00Z INFO [request_id=550e8400-e29b-41d4-a716-446655440000] method=POST path=/api/register status=201 duration_ms=45 request completed
+2024-01-15T10:30:00Z INFO user_id=user-abc username=alice user registered successfully
+2024-01-15T10:30:01Z INFO [connection_id=550e8400-e29b-41d4-a716-446655440001] room_id=room-123 token_hash=abcd1234 websocket connection attempt
+2024-01-15T10:30:01Z INFO [connection_id=550e8400-e29b-41d4-a716-446655440001] user_id=user-abc username=alice websocket token verification successful
+2024-01-15T10:30:01Z INFO [connection_id=550e8400-e29b-41d4-a716-446655440001] room_id=room-123 user_id=user-abc websocket room validation successful
+2024-01-15T10:30:02Z INFO room_id=room-123 room_name=TestRoom host_id=user-abc room created successfully
+2024-01-15T10:30:03Z INFO room_id=room-123 user_id=user-xyz player joined room successfully
+```
+
+### 根据 Request ID 过滤日志
+
+使用 `grep` 根据请求 ID 过滤日志:
+
+```bash
+# 过滤特定请求的所有日志
+./target/release/gobang-server 2>&1 | grep "550e8400-e29b-41d4-a716-446655440000"
+
+# 过滤特定房间的所有日志
+./target/release/gobang-server 2>&1 | grep "room_id=room-123"
+
+# 过滤特定用户的所有日志
+./target/release/gobang-server 2>&1 | grep "user_id=user-abc"
+```
+
+### WebSocket 错误消息
+
+WebSocket 连接失败时，服务器会向客户端发送错误消息:
+
+```json
+{"type": "invalid_token", "message": "invalid token"}
+{"type": "user_not_found", "message": "user not found"}
+{"type": "room_not_found", "message": "room not found"}
+{"type": "not_participant", "message": "not a room participant"}
+```
+
+### 生产环境推荐配置
+
+```bash
+# 推荐的生产环境日志级别
+RUST_LOG=info
+
+# 如果需要调试特定模块
+RUST_LOG=info,gobang_server::ws=debug
+```
+
 ## 性能指标
 
 - **并发连接**: SQLite WAL 模式可支持约 1000 并发连接

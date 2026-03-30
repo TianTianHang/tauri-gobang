@@ -28,6 +28,8 @@ pub struct RoomListEntry {
     pub name: String,
     pub host_username: String,
     pub created_at: i64,
+    pub player_count: i32,
+    pub status: String,
 }
 
 #[derive(Debug, Deserialize)]

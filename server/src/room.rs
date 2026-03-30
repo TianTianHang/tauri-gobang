@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use tokio::sync::mpsc;
+use serde::{Deserialize, Serialize};
 
 pub type RoomMap = std::sync::Arc<tokio::sync::RwLock<HashMap<String, Room>>>;
 
@@ -12,6 +13,12 @@ pub enum RoomStatus {
     Ended,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveRecord {
+    pub row: u8,
+    pub col: u8,
+}
+
 pub struct Room {
     pub id: String,
     pub name: String,
@@ -19,8 +26,11 @@ pub struct Room {
     pub host_id: String,
     pub player2_id: Option<String>,
     pub players: HashMap<String, PlayerConnection>,
-    pub disconnected: Option<(String, Instant)>,
+    pub disconnected: Option<(String, Instant, Option<String>)>,
     pub timeout_handle: Option<tokio::task::JoinHandle<()>>,
+    pub reconnect_in_progress: Option<String>,
+    pub moves: Vec<MoveRecord>,
+    pub current_player: String,
 }
 
 pub struct PlayerConnection {
@@ -29,30 +39,34 @@ pub struct PlayerConnection {
     pub sender: mpsc::Sender<String>,
 }
 
-impl Room {
-    pub fn new(id: String, name: String, host_id: String, host_username: String, host_sender: mpsc::Sender<String>) -> Self {
-        let mut players = HashMap::new();
-        players.insert(
-            host_id.clone(),
-            PlayerConnection {
-                user_id: host_id.clone(),
-                username: host_username,
-                sender: host_sender,
-            },
-        );
-        Room {
-            id,
-            name,
-            status: RoomStatus::Waiting,
-            host_id,
-            player2_id: None,
-            players,
-            disconnected: None,
-            timeout_handle: None,
+    impl Room {
+        pub fn new(id: String, name: String, host_id: String, host_username: String, host_sender: mpsc::Sender<String>) -> Self {
+            let mut players = HashMap::new();
+            players.insert(
+                host_id.clone(),
+                PlayerConnection {
+                    user_id: host_id.clone(),
+                    username: host_username,
+                    sender: host_sender,
+                },
+            );
+            Room {
+                id,
+                name,
+                status: RoomStatus::Waiting,
+                host_id: host_id.clone(),
+                player2_id: None,
+                players,
+                disconnected: None,
+                timeout_handle: None,
+                reconnect_in_progress: None,
+                moves: Vec::new(),
+                current_player: host_id,
+            }
         }
-    }
 
     pub fn add_player(&mut self, user_id: String, username: String, sender: mpsc::Sender<String>) {
+        let old_status = self.status.clone();
         self.player2_id = Some(user_id.clone());
         self.players.insert(
             user_id.clone(),
@@ -63,6 +77,13 @@ impl Room {
             },
         );
         self.status = RoomStatus::Playing;
+
+        tracing::info!(
+            room_id = %self.id,
+            old_status = ?old_status,
+            new_status = ?self.status,
+            "room status transition"
+        );
     }
 
     pub fn is_participant(&self, user_id: &str) -> bool {
@@ -108,6 +129,21 @@ impl Room {
             let _ = player.sender.send(msg.to_string()).await;
         }
     }
+
+    pub fn add_move(&mut self, row: u8, col: u8) {
+        self.moves.push(MoveRecord { row, col });
+        let next = self.get_opponent_id(&self.current_player)
+            .unwrap_or(self.current_player.clone());
+        self.current_player = next;
+    }
+
+    pub fn get_current_game_state(&self) -> Option<(Vec<MoveRecord>, String)> {
+        if self.status == RoomStatus::Playing {
+            Some((self.moves.clone(), self.current_player.clone()))
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -134,6 +170,7 @@ mod tests {
         assert!(room.player2_id.is_none());
         assert_eq!(room.players.len(), 1);
         assert!(room.disconnected.is_none());
+        assert!(room.reconnect_in_progress.is_none());
     }
 
     #[test]

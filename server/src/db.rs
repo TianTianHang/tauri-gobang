@@ -40,6 +40,7 @@ pub async fn insert_user(
     .bind(password_hash)
     .execute(pool)
     .await?;
+    tracing::debug!(user_id = %id, "user created successfully");
     Ok(())
 }
 
@@ -77,6 +78,7 @@ pub async fn insert_room(
     .bind(host_id)
     .execute(pool)
     .await?;
+    tracing::debug!(room_id = %id, "room created successfully");
     Ok(())
 }
 
@@ -96,6 +98,7 @@ pub async fn update_room_player2(pool: &SqlitePool, room_id: &str, player2_id: &
         .bind(room_id)
         .execute(pool)
         .await?;
+    tracing::debug!(room_id = %room_id, player2_id = %player2_id, "room player2 updated");
     Ok(())
 }
 
@@ -122,12 +125,15 @@ pub async fn update_room_status(pool: &SqlitePool, room_id: &str, status: &str) 
             .execute(pool)
             .await?;
     }
+    tracing::debug!(room_id = %room_id, new_status = %status, "room status updated");
     Ok(())
 }
 
 pub async fn list_waiting_rooms(pool: &SqlitePool) -> Result<Vec<types::RoomListEntry>> {
     let rows = sqlx::query_as::<_, types::RoomListEntry>(
-        "SELECT r.id, r.name, u.username as host_username, r.created_at \
+        "SELECT r.id, r.name, u.username as host_username, r.created_at, \
+         CASE WHEN r.player2_id IS NOT NULL THEN 2 ELSE 1 END as player_count, \
+         r.status \
          FROM rooms r JOIN users u ON r.host_id = u.id \
          WHERE r.status = 'waiting' ORDER BY r.created_at DESC",
     )
@@ -183,5 +189,7 @@ mod types {
         pub name: String,
         pub host_username: String,
         pub created_at: i64,
+        pub player_count: i32,
+        pub status: String,
     }
 }
