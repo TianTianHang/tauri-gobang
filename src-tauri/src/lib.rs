@@ -5,9 +5,7 @@ mod network;
 mod rapfi;
 
 use game::GameState;
-use network::NetworkState;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 
 macro_rules! debugln {
@@ -126,92 +124,18 @@ fn undo_two_moves(state: GameState) -> Result<MoveResult, String> {
     })
 }
 
-#[tauri::command]
-fn network_host(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<Mutex<NetworkState>>>,
-    port: u16,
-) -> Result<String, String> {
-    network::host_game(app, &state.inner(), port)
-}
-
-#[tauri::command]
-fn network_join(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, Arc<Mutex<NetworkState>>>,
-    ip: String,
-    port: u16,
-) -> Result<(), String> {
-    network::join_game(app, &state.inner(), &ip, port)
-}
-
-#[tauri::command]
-fn network_send_move(
-    state: tauri::State<'_, Arc<Mutex<NetworkState>>>,
-    row: usize,
-    col: usize,
-) -> Result<(), String> {
-    network::send_message(&state.inner(), &network::NetworkMessage::Move { row, col })
-}
-
-#[tauri::command]
-fn network_send_restart_request(
-    state: tauri::State<'_, Arc<Mutex<NetworkState>>>,
-) -> Result<(), String> {
-    network::send_message(&state.inner(), &network::NetworkMessage::RestartRequest)
-}
-
-#[tauri::command]
-fn network_send_restart_accept(
-    state: tauri::State<'_, Arc<Mutex<NetworkState>>>,
-) -> Result<(), String> {
-    network::send_message(&state.inner(), &network::NetworkMessage::RestartAccept)
-}
-
-#[tauri::command]
-fn network_send_restart_reject(
-    state: tauri::State<'_, Arc<Mutex<NetworkState>>>,
-) -> Result<(), String> {
-    network::send_message(&state.inner(), &network::NetworkMessage::RestartReject)
-}
-
-#[tauri::command]
-fn network_disconnect(state: tauri::State<'_, Arc<Mutex<NetworkState>>>) -> Result<(), String> {
-    network::disconnect(&state.inner())
-}
-
-#[tauri::command]
-fn network_is_connected(state: tauri::State<'_, Arc<Mutex<NetworkState>>>) -> bool {
-    network::is_connected(&state.inner())
-}
-
-#[tauri::command]
-fn get_local_ip() -> Result<String, String> {
-    network::get_local_ip()
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
-        .manage(Arc::new(Mutex::new(NetworkState::new())))
         .invoke_handler(tauri::generate_handler![
             new_game,
             make_move,
             ai_move_start,
             undo_move,
             undo_two_moves,
-            network_host,
-            network_join,
-            network_send_move,
-            network_send_restart_request,
-            network_send_restart_accept,
-            network_send_restart_reject,
-            network_disconnect,
-            network_is_connected,
-            get_local_ip,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -8,14 +8,18 @@ import {
   Cell,
   GameStatus,
   MoveResult,
-  ConnectionInfo,
-  ConnectionStatus,
+  ServerMessage,
+  NetworkMessage,
 } from "./types/game";
+import { getGameWsUrl, joinRoom } from "./api";
 import MainMenu from "./components/MainMenu";
 import GameBoard from "./components/GameBoard";
 import StatusBar from "./components/StatusBar";
 import MenuDrawer from "./components/MenuDrawer";
-import NetworkSetup from "./components/NetworkSetup";
+import LoginScreen from "./components/LoginScreen";
+import RoomList from "./components/RoomList";
+import WaitingRoom from "./components/WaitingRoom";
+import ReconnectDialog from "./components/ReconnectDialog";
 import GameResultModal from "./components/GameResultModal";
 import { useHapticFeedback } from "./hooks/useHapticFeedback";
 import "./App.css";
@@ -23,23 +27,29 @@ import "./App.css";
 function App() {
   const [mode, setMode] = useState<GameMode>("menu");
   const [gameState, setGameState] = useState<GameState | null>(null);
-  // Ref to always access the latest gameState inside network event listeners,
-  // avoiding React closure traps where listeners capture stale state.
   const gameStateRef = useRef(gameState);
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [aiThinking, setAiThinking] = useState(false);
   const [lastMove, setLastMove] = useState<{ row: number; col: number } | null>(null);
-  const [localIp, setLocalIp] = useState("");
-  const [networkError, setNetworkError] = useState("");
-  const [networkLoading, setNetworkLoading] = useState(false);
   const [restartRequested, setRestartRequested] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected");
   const [gameDuration, setGameDuration] = useState<number>(0);
   const gameStartTimeRef = useRef<number>(Date.now());
   const unsubFns = useRef<UnlistenFn[]>([]);
   const haptic = useHapticFeedback();
+
+  // Server auth state
+  const [token, setToken] = useState<string>(() => localStorage.getItem("gobang_token") || "");
+  const [username, setUsername] = useState<string>(() => localStorage.getItem("gobang_username") || "");
+
+  // Online game state
+  const [opponentName, setOpponentName] = useState("");
+  const [currentRoomId, setCurrentRoomId] = useState("");
+  const [currentRoomName, setCurrentRoomName] = useState("");
+  const [isHost, setIsHost] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const [showReconnect, setShowReconnect] = useState(false);
+  const [reconnectTimeout, setReconnectTimeout] = useState(30);
 
   useEffect(() => {
     gameStateRef.current = gameState;
@@ -51,13 +61,13 @@ function App() {
     }
   }, [gameState?.status]);
 
+  // AI event listeners
   useEffect(() => {
     const unlistenAiMove = listen<{
       row: number;
       col: number;
       state: GameState;
     }>("ai:move_completed", (event) => {
-      console.log("✅ [AI] Received AI move:", event.payload);
       setGameState(event.payload.state);
       setLastMove({ row: event.payload.row, col: event.payload.col });
       setAiThinking(false);
@@ -68,7 +78,7 @@ function App() {
     });
 
     const unlistenAiError = listen<string>("ai:move_error", (event) => {
-      console.error("❌ [AI] AI error:", event.payload);
+      console.error("AI error:", event.payload);
       setAiThinking(false);
     });
 
@@ -90,17 +100,209 @@ function App() {
   }, []);
 
   useEffect(() => {
-    invoke<string>("get_local_ip")
-      .then(setLocalIp)
-      .catch(() => setLocalIp(""));
-  }, []);
-
-  useEffect(() => {
     return () => {
       cleanupListeners();
     };
   }, [cleanupListeners]);
 
+  // WebSocket management
+  const closeWs = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.onopen = null;
+      wsRef.current.onclose = null;
+      wsRef.current.onmessage = null;
+      wsRef.current.onerror = null;
+      if (wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.close();
+      }
+      wsRef.current = null;
+    }
+  }, []);
+
+  const connectWs = useCallback(
+    (roomId: string, tok: string, role: "host" | "client"): WebSocket => {
+      closeWs();
+      const wsUrl = getGameWsUrl(roomId, tok);
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log("[WS] Connected to", wsUrl);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg: ServerMessage = JSON.parse(event.data);
+          switch (msg.type) {
+            case "game_start": {
+              const black = msg.black_player!;
+              const white = msg.white_player!;
+              const oppName = role === "host" ? white : black;
+              setOpponentName(oppName);
+              invoke<GameState>("new_game").then((state) => {
+                setGameState(state);
+                setLastMove(null);
+                setRestartRequested(false);
+                gameStartTimeRef.current = Date.now();
+                setGameDuration(0);
+                setMode(role === "host" ? "online_host" : "online_client");
+              });
+              break;
+            }
+            case "opponent_joined": {
+              if (msg.username) {
+                setOpponentName(msg.username);
+              }
+              break;
+            }
+            case "opponent_disconnected": {
+              setShowReconnect(true);
+              setReconnectTimeout(msg.timeout_seconds || 30);
+              break;
+            }
+            case "player_reconnected": {
+              setShowReconnect(false);
+              break;
+            }
+            case "game_ended": {
+              setShowReconnect(false);
+              if (gameStateRef.current) {
+                setGameState({
+                  ...gameStateRef.current,
+                  status: GameStatus.Draw,
+                });
+              }
+              break;
+            }
+            default: {
+              // Game messages (move, restart, etc.)
+              const netMsg = msg as unknown as NetworkMessage;
+              if (netMsg.type === "move" && netMsg.row !== undefined && netMsg.col !== undefined) {
+                const currentState = gameStateRef.current;
+                if (currentState && currentState.status === GameStatus.Playing) {
+                  invoke<MoveResult>("make_move", { state: currentState, row: netMsg.row, col: netMsg.col })
+                    .then((result) => {
+                      setGameState(result.state);
+                      setLastMove({ row: netMsg.row!, col: netMsg.col! });
+                    })
+                    .catch(console.error);
+                }
+              } else if (netMsg.type === "restart_request") {
+                setRestartRequested(true);
+              } else if (netMsg.type === "restart_accept") {
+                invoke<GameState>("new_game").then((state) => {
+                  setGameState(state);
+                  setLastMove(null);
+                  setRestartRequested(false);
+                  gameStartTimeRef.current = Date.now();
+                });
+              } else if (netMsg.type === "restart_reject") {
+                setRestartRequested(false);
+              }
+              break;
+            }
+          }
+        } catch (e) {
+          console.error("[WS] Failed to parse message:", event.data, e);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log("[WS] Connection closed");
+      };
+
+      ws.onerror = (e) => {
+        console.error("[WS] Error:", e);
+      };
+
+      wsRef.current = ws;
+      return ws;
+    },
+    [closeWs]
+  );
+
+  const sendWs = useCallback((msg: NetworkMessage) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(msg));
+    }
+  }, []);
+
+  // Auth handlers
+  const handleLoginSuccess = useCallback(
+    (tok: string, uname: string) => {
+      setToken(tok);
+      setUsername(uname);
+      localStorage.setItem("gobang_token", tok);
+      localStorage.setItem("gobang_username", uname);
+      setMode("lobby");
+    },
+    []
+  );
+
+  const handleLogout = useCallback(() => {
+    closeWs();
+    setToken("");
+    setUsername("");
+    localStorage.removeItem("gobang_token");
+    localStorage.removeItem("gobang_username");
+    setMode("menu");
+  }, [closeWs]);
+
+  // Room handlers
+  const handleCreateRoom = useCallback(
+    (roomId: string, roomName: string) => {
+      setCurrentRoomId(roomId);
+      setCurrentRoomName(roomName);
+      setIsHost(true);
+      connectWs(roomId, token, "host");
+      setMode("waiting");
+    },
+    [connectWs, token]
+  );
+
+  const handleJoinRoom = useCallback(
+    async (roomId: string) => {
+      try {
+        await joinRoom(token, roomId);
+        setCurrentRoomId(roomId);
+        setIsHost(false);
+        connectWs(roomId, token, "client");
+      } catch (e) {
+        alert(e instanceof Error ? e.message : "加入房间失败");
+      }
+    },
+    [connectWs, token]
+  );
+
+  const handleCancelWaiting = useCallback(() => {
+    closeWs();
+    setCurrentRoomId("");
+    setCurrentRoomName("");
+    setIsHost(false);
+    setMode("lobby");
+  }, [closeWs]);
+
+  // Reconnect
+  const reconnectWs = useCallback(() => {
+    if (!currentRoomId || !token) return null;
+    try {
+      const ws = connectWs(currentRoomId, token, isHost ? "host" : "client");
+      setShowReconnect(false);
+      return ws;
+    } catch {
+      return null;
+    }
+  }, [currentRoomId, token, isHost, connectWs]);
+
+  const handleReconnectTimeout = useCallback(() => {
+    setShowReconnect(false);
+    closeWs();
+    setMode("menu");
+    setGameState(null);
+    setCurrentRoomId("");
+    setOpponentName("");
+  }, [closeWs]);
+
+  // Game handlers
   const startNewGame = useCallback(async () => {
     const state = await invoke<GameState>("new_game");
     setGameState(state);
@@ -113,101 +315,16 @@ function App() {
 
   const handlePlayAI = useCallback(() => {
     setMode("ai");
-    setNetworkError("");
     startNewGame();
   }, [startNewGame]);
 
-  const setupNetworkListeners = useCallback(
-    (newMode: GameMode) => {
-      cleanupListeners();
-
-      const unlistenPromises = [
-        listen<string>("network:opponent_moved", (event) => {
-          const data = JSON.parse(event.payload);
-          const { row, col } = data;
-          const currentState = gameStateRef.current;
-          if (!currentState) {
-            console.error("opponent_moved: gameState is null, ignoring");
-            return;
-          }
-          if (currentState.status !== GameStatus.Playing) {
-            console.error("opponent_moved: game not in playing state, ignoring");
-            return;
-          }
-          invoke<MoveResult>("make_move", { state: currentState, row, col })
-            .then((result) => {
-              setGameState(result.state);
-              setLastMove({ row, col });
-            })
-            .catch(console.error);
-        }),
-        listen<string>("network:disconnected", () => {
-          setNetworkError("对手已断开连接");
-          setConnectionStatus("disconnected");
-          setMode("menu");
-        }),
-        listen<string>("network:restart_request", () => {
-          setRestartRequested(true);
-        }),
-        listen<string>("network:restart_accept", () => {
-          startNewGame();
-          setRestartRequested(false);
-        }),
-        listen<string>("network:restart_reject", () => {
-          setRestartRequested(false);
-        }),
-      ];
-
-      Promise.all(unlistenPromises).then((fns) => {
-        unsubFns.current = fns;
-      });
-
-      setMode(newMode);
-    },
-    [cleanupListeners, startNewGame]
-  );
-
-  const handleHostGame = useCallback(
-    async (port: number) => {
-      setNetworkError("");
-      setNetworkLoading(true);
-      setConnectionInfo({ ip: localIp, port });
-      setConnectionStatus("connecting");
-      try {
-        await invoke<string>("network_host", { port });
-        setupNetworkListeners("online_host");
-        await startNewGame();
-        setNetworkLoading(false);
-        setConnectionStatus("connected");
-      } catch (e) {
-        setNetworkError(String(e));
-        setNetworkLoading(false);
-        setConnectionStatus("disconnected");
-      }
-    },
-    [setupNetworkListeners, startNewGame, localIp]
-  );
-
-  const handleJoinGame = useCallback(
-    async (ip: string, port: number) => {
-      setNetworkError("");
-      setNetworkLoading(true);
-      setConnectionInfo({ ip, port });
-      setConnectionStatus("connecting");
-      try {
-        await invoke<void>("network_join", { ip, port });
-        setupNetworkListeners("online_client");
-        await startNewGame();
-        setNetworkLoading(false);
-        setConnectionStatus("connected");
-      } catch (e) {
-        setNetworkError(String(e));
-        setNetworkLoading(false);
-        setConnectionStatus("disconnected");
-      }
-    },
-    [setupNetworkListeners, startNewGame]
-  );
+  const handleOnlinePlay = useCallback(() => {
+    if (token) {
+      setMode("lobby");
+    } else {
+      setMode("login");
+    }
+  }, [token]);
 
   const handleCellClick = useCallback(
     async (row: number, col: number) => {
@@ -221,7 +338,7 @@ function App() {
         setLastMove({ row, col });
 
         if (isOnline) {
-          await invoke<void>("network_send_move", { row, col });
+          sendWs({ type: "move", row, col });
         }
 
         if (mode === "ai" && result.ai_thinking) {
@@ -230,12 +347,9 @@ function App() {
         }
       } catch (e) {
         console.error("Move error:", e);
-        if (isOnline) {
-          setNetworkError("网络发送失败，对手可能已断开连接");
-        }
       }
     },
-    [gameState, aiThinking, isOnline, myColor, mode, difficulty]
+    [gameState, aiThinking, isOnline, myColor, mode, difficulty, sendWs]
   );
 
   const handlePiecePlaced = useCallback(() => {
@@ -273,13 +387,7 @@ function App() {
   }, [startNewGame]);
 
   const handleBackToMenu = useCallback(async () => {
-    if (isOnline) {
-      try {
-        await invoke<void>("network_disconnect");
-      } catch {
-        // ignore
-      }
-    }
+    closeWs();
     cleanupListeners();
     setMode("menu");
     setGameState(null);
@@ -287,76 +395,61 @@ function App() {
     setAiThinking(false);
     setRestartRequested(false);
     setMenuOpen(false);
-    setConnectionInfo(null);
-    setConnectionStatus("disconnected");
-  }, [isOnline, cleanupListeners]);
+    setCurrentRoomId("");
+    setOpponentName("");
+    setIsHost(false);
+    setShowReconnect(false);
+  }, [closeWs, cleanupListeners]);
 
-  const handleRestartRequest = useCallback(async () => {
-    try {
-      await invoke<void>("network_send_restart_request");
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
+  const handleRestartRequest = useCallback(() => {
+    sendWs({ type: "restart_request" });
+  }, [sendWs]);
 
   const handleAcceptRestart = useCallback(async () => {
-    try {
-      await invoke<void>("network_send_restart_accept");
-      startNewGame();
-      setRestartRequested(false);
-    } catch (e) {
-      console.error(e);
-    }
-  }, [startNewGame]);
-
-  const handleRejectRestart = useCallback(async () => {
-    try {
-      await invoke<void>("network_send_restart_reject");
-    } catch (e) {
-      console.error(e);
-    }
+    sendWs({ type: "restart_accept" });
     setRestartRequested(false);
-  }, []);
+  }, [sendWs]);
+
+  const handleRejectRestart = useCallback(() => {
+    sendWs({ type: "restart_reject" });
+    setRestartRequested(false);
+  }, [sendWs]);
+
+  // ===== ROUTING =====
 
   if (mode === "menu") {
+    return <MainMenu onPlayAI={handlePlayAI} onOnlinePlay={handleOnlinePlay} />;
+  }
+
+  if (mode === "login") {
     return (
-      <MainMenu
-        onPlayAI={handlePlayAI}
-        onHostGame={() => setMode("host_setup")}
-        onJoinGame={() => setMode("join_setup")}
+      <LoginScreen
+        onLoginSuccess={handleLoginSuccess}
+        onBack={() => setMode("menu")}
       />
     );
   }
 
-  if (mode === "host_setup") {
+  if (mode === "lobby") {
     return (
-      <div className="setup-page">
-        <NetworkSetup
-          mode="host"
-          onHost={handleHostGame}
-          onJoin={() => {}}
-          onCancel={() => setMode("menu")}
-          localIp={localIp}
-          loading={networkLoading}
-          error={networkError}
-        />
-      </div>
+      <RoomList
+        token={token}
+        username={username}
+        onCreateRoom={handleCreateRoom}
+        onJoinRoom={handleJoinRoom}
+        onLogout={handleLogout}
+      />
     );
   }
 
-  if (mode === "join_setup") {
+  if (mode === "waiting") {
     return (
-      <div className="setup-page">
-        <NetworkSetup
-          mode="join"
-          onHost={() => {}}
-          onJoin={handleJoinGame}
-          onCancel={() => setMode("menu")}
-          localIp={localIp}
-          loading={networkLoading}
-          error={networkError}
-        />
-      </div>
+      <WaitingRoom
+        roomId={currentRoomId}
+        roomName={currentRoomName}
+        isHost={isHost}
+        onCancel={handleCancelWaiting}
+      />
     );
   }
 
@@ -371,8 +464,7 @@ function App() {
         myColor={myColor}
         onMenuOpen={handleMenuOpen}
         menuOpen={menuOpen}
-        connectionInfo={connectionInfo}
-        connectionStatus={connectionStatus}
+        opponentName={opponentName}
       />
       <GameBoard
         gameState={gameState}
@@ -405,6 +497,16 @@ function App() {
           gameDuration={gameDuration}
           onNewGame={handleNewGame}
           onBackToMenu={handleBackToMenu}
+        />
+      )}
+      {showReconnect && (
+        <ReconnectDialog
+          visible={showReconnect}
+          timeoutSeconds={reconnectTimeout}
+          opponentName={opponentName}
+          onReconnectSuccess={() => setShowReconnect(false)}
+          onTimeout={handleReconnectTimeout}
+          reconnectWs={reconnectWs}
         />
       )}
     </div>

@@ -2,89 +2,89 @@
 
 ## 1. Server Project Setup
 
-- [ ] 1.1 Create `server/` directory with Cargo.toml
-- [ ] 1.2 Add dependencies: axum, tokio-tungstenite, sqlx, bcrypt, uuid, serde, tracing, anyhow
-- [ ] 1.3 Create module structure: main.rs, auth.rs, db.rs, room.rs, ws.rs, types.rs, protocol/
-- [ ] 1.4 Create `migrations/init.sql` with tables (users, rooms, games)
-- [ ] 1.5 Add .env configuration with defaults (port 3001, database path, etc.)
+- [x] 1.1 Create `server/` directory with Cargo.toml
+- [x] 1.2 Add dependencies: axum, tokio-tungstenite, sqlx, bcrypt, uuid, serde, tracing, anyhow
+- [x] 1.3 Create module structure: main.rs, auth.rs, db.rs, room.rs, ws.rs, types.rs, protocol/
+- [x] 1.4 Create `migrations/init.sql` with tables (users, rooms, games)
+- [x] 1.5 Add .env configuration with defaults (port 3001, database path, etc.)
 
 ## 2. Database Layer
 
-- [ ] 2.1 Implement `db.rs`: SqlitePool connection setup
-- [ ] 2.2 Add `init_database()` function to run migrations on startup
-- [ ] 2.3 Implement User queries: insert_user, find_by_username, find_by_id
-- [ ] 2.4 Implement Room queries: insert_room, find_by_id, update_player2, update_status, list_waiting_rooms
-- [ ] 2.5 Implement Game queries: insert_game, find_by_room
-- [ ] 2.6 Add database error handling and conversion to HTTP status codes
+- [x] 2.1 Implement `db.rs`: SqlitePool connection setup
+- [x] 2.2 Add `init_database()` function to run migrations on startup
+- [x] 2.3 Implement User queries: insert_user, find_by_username, find_by_id
+- [x] 2.4 Implement Room queries: insert_room, find_by_id, update_player2, update_status, list_waiting_rooms
+- [x] 2.5 Implement Game queries: insert_game, find_by_room
+- [x] 2.6 Add database error handling and conversion to HTTP status codes
 
 ## 3. Authentication System
 
-- [ ] 3.1 Implement `auth.rs`: password hashing with bcrypt (cost factor 12)
-- [ ] 3.2 Implement session token generation (UUID v4)
-- [ ] 3.3 Create in-memory session store (HashMap<String, UserId>)
-- [ ] 3.4 Implement `register()` handler: validate input, hash password, insert to DB
-- [ ] 3.5 Implement `login()` handler: verify password, generate token, store session
-- [ ] 3.6 Add middleware for token validation (extract Authorization header)
-- [ ] 3.7 Add helper functions: `verify_token()`, `get_user_id_from_token()`
+- [x] 3.1 Implement `auth.rs`: password hashing with bcrypt (cost factor 12)
+- [x] 3.2 Implement session token generation (UUID v4)
+- [x] 3.3 Create in-memory session store (HashMap<String, UserId>)
+- [x] 3.4 Implement `register()` handler: validate input, hash password, insert to DB
+- [x] 3.5 Implement `login()` handler: verify password, generate token, store session
+- [x] 3.6 Add middleware for token validation (extract Authorization header)
+- [x] 3.7 Add helper functions: `verify_token()`, `get_user_id_from_token()`
 
 ## 4. Room Management REST API
 
-- [ ] 4.1 Create `room.rs`: Room struct (id, name, status, players, host_id, disconnected)
-- [ ] 4.2 Implement in-memory room store (HashMap<String, Room>)
-- [ ] 4.3 Add `GET /api/rooms` endpoint: return list of waiting rooms
-- [ ] 4.4 Add `POST /api/rooms` endpoint: create room, generate UUID, store in DB and memory
-- [ ] 4.5 Add `POST /api/rooms/:id/join` endpoint: validate room status, add player2, update status to "playing"
-- [ ] 4.6 Add helper: `broadcast_to_room()` to send messages to all players in a room
-- [ ] 4.7 Add room lifecycle: auto-cleanup after game ends
+- [x] 4.1 Create `room.rs`: Room struct (id, name, status, players, host_id, disconnected)
+- [x] 4.2 Implement in-memory room store (HashMap<String, Room>)
+- [x] 4.3 Add `GET /api/rooms` endpoint: return list of waiting rooms
+- [x] 4.4 Add `POST /api/rooms` endpoint: create room, generate UUID, store in DB and memory
+- [x] 4.5 Add `POST /api/rooms/:id/join` endpoint: validate room status, add player2, update status to "playing"
+- [x] 4.6 Add helper: `broadcast_to_room()` to send messages to all players in a room
+- [x] 4.7 Add room lifecycle: auto-cleanup after game ends
 
 ## 5. WebSocket Game Messaging
 
-- [ ] 5.1 Create `ws.rs` module with WebSocket upgrade handler
-- [ ] 5.2 Implement `WS /game/:room_id` endpoint with token validation
-- [ ] 5.3 Add connection handler: extract room_id and token, validate, add connection to Room.players
-- [ ] 5.4 Implement message receive loop: parse incoming JSON, forward to opponent
-- [ ] 5.5 Add server-initiated messages:
-  - [ ] 5.5.1 GameStart message (send when room transitions to "playing")
-  - [ ] 5.5.2 OpponentJoined message (send when player2 joins)
-  - [ ] 5.5.3 OpponentDisconnected message (send on disconnect)
-  - [ ] 5.5.4 PlayerReconnected message (send on reconnect)
-  - [ ] 5.5.5 GameEnded message (send on game over)
-- [ ] 5.6 Implement message isolation: only forward to opponent, not back to sender
-- [ ] 5.7 Add graceful connection close handling
+- [x] 5.1 Create `ws.rs` module with WebSocket upgrade handler
+- [x] 5.2 Implement `WS /game/:room_id` endpoint with token validation
+- [x] 5.3 Add connection handler: extract room_id and token, validate, add connection to Room.players
+- [x] 5.4 Implement message receive loop: parse incoming JSON, forward to opponent
+- [x] 5.5 Add server-initiated messages:
+  - [x] 5.5.1 GameStart message (send when room transitions to "playing")
+  - [x] 5.5.2 OpponentJoined message (send when player2 joins)
+  - [x] 5.5.3 OpponentDisconnected message (send on disconnect)
+  - [x] 5.5.4 PlayerReconnected message (send on reconnect)
+  - [x] 5.5.5 GameEnded message (send on game over)
+- [x] 5.6 Implement message isolation: only forward to opponent, not back to sender
+- [x] 5.7 Add graceful connection close handling
 
 ## 6. Reconnection Handling
 
-- [ ] 6.1 Add disconnect detection in WebSocket handler (on_close event)
-- [ ] 6.2 Store disconnection info in Room: `disconnected: Option<(UserId, Instant)>`
-- [ ] 6.3 Implement 30-second timeout task using `tokio::time::sleep`
-- [ ] 6.4 Send OpponentDisconnected message with timeout info to connected player
-- [ ] 6.5 Implement reconnection handler:
-  - [ ] 6.5.1 Validate token and room_id
-  - [ ] 6.5.2 Check if within timeout window
-  - [ ] 6.5.3 Cancel timeout task if reconnected
-  - [ ] 6.5.4 Restore WebSocket connection to Room.players
-  - [ ] 6.5.5 Send PlayerReconnected message to both players
-- [ ] 6.6 Implement timeout expiry: declare opponent winner, send GameEnded message
-- [ ] 6.7 Update room status to "ended" and remove from memory after timeout
+- [x] 6.1 Add disconnect detection in WebSocket handler (on_close event)
+- [x] 6.2 Store disconnection info in Room: `disconnected: Option<(UserId, Instant)>`
+- [x] 6.3 Implement 30-second timeout task using `tokio::time::sleep`
+- [x] 6.4 Send OpponentDisconnected message with timeout info to connected player
+- [x] 6.5 Implement reconnection handler:
+  - [x] 6.5.1 Validate token and room_id
+  - [x] 6.5.2 Check if within timeout window
+  - [x] 6.5.3 Cancel timeout task if reconnected
+  - [x] 6.5.4 Restore WebSocket connection to Room.players
+  - [x] 6.5.5 Send PlayerReconnected message to both players
+- [x] 6.6 Implement timeout expiry: declare opponent winner, send GameEnded message
+- [x] 6.7 Update room status to "ended" and remove from memory after timeout
 
 ## 7. Server Deployment Features
 
-- [ ] 7.1 Implement data directory auto-creation: `~/.gobang-server/` or `%APPDATA%/gobang-server/`
-- [ ] 7.2 Add auto-initialization on first run: create database, run migrations
-- [ ] 7.3 Implement default configuration with config file generation (`config.toml`)
-- [ ] 7.4 Add daemon mode support (`--daemon` flag): fork to background, redirect logs
+- [x] 7.1 Implement data directory auto-creation: `~/.gobang-server/` or `%APPDATA%/gobang-server/`
+- [x] 7.2 Add auto-initialization on first run: create database, run migrations
+- [x] 7.3 Implement default configuration with config file generation (`config.toml`)
+- [x] 7.4 Add daemon mode support (`--daemon` flag): fork to background, redirect logs
 - [ ] 7.5 Create systemd service file template for Linux
-- [ ] 7.6 Implement graceful shutdown on SIGINT/SIGTERM (close connections, DB)
-- [ ] 7.7 Add startup logging: display server URL, data directory, PID
-- [ ] 7.8 Implement port binding error handling
+- [x] 7.6 Implement graceful shutdown on SIGINT/SIGTERM (close connections, DB)
+- [x] 7.7 Add startup logging: display server URL, data directory, PID
+- [x] 7.8 Implement port binding error handling
 
 ## 8. Protocol Definition
 
-- [ ] 8.1 Define `protocol/control.rs`: ServerControlMessage enum (Login, Register, etc.)
-- [ ] 8.2 Define `protocol/control.rs`: ServerResponse enum (LoginSuccess, RoomCreated, etc.)
-- [ ] 8.3 Define `protocol/game.rs`: reuse NetworkMessage enum from client (Move, RestartRequest, etc.)
-- [ ] 8.4 Define `protocol/game.rs`: ServerMessage enum (GameStart, OpponentJoined, etc.)
-- [ ] 8.5 Add serde serialization/deserialization for all message types
+- [x] 8.1 Define `protocol/control.rs`: ServerControlMessage enum (Login, Register, etc.)
+- [x] 8.2 Define `protocol/control.rs`: ServerResponse enum (LoginSuccess, RoomCreated, etc.)
+- [x] 8.3 Define `protocol/game.rs`: reuse NetworkMessage enum from client (Move, RestartRequest, etc.)
+- [x] 8.4 Define `protocol/game.rs`: ServerMessage enum (GameStart, OpponentJoined, etc.)
+- [x] 8.5 Add serde serialization/deserialization for all message types
 
 ## 9. Client Network Layer Refactor
 

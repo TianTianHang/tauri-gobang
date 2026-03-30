@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum NetworkMessage {
+pub enum GameMessage {
     Move { row: usize, col: usize },
     RestartRequest,
     RestartAccept,
@@ -11,7 +11,7 @@ pub enum NetworkMessage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
     GameStart {
         black_player: String,

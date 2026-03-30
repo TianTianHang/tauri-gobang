@@ -58,6 +58,10 @@
             gradle
             jdk17
             pkg-config
+            gtk3
+            gdk-pixbuf
+            webkitgtk_4_1
+            libsoup_3
           ];
 
           shellHook = ''
@@ -66,6 +70,9 @@
             export ANDROID_NDK_HOME=$ANDROID_HOME/ndk-bundle
             export GRADLE_OPTS="-Dorg.gradle.project.android.aapt2FromMavenOverride=$ANDROID_HOME/build-tools/36.0.0/aapt2"
             export PATH=$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
+
+            # PKG_CONFIG_PATH for Tauri dependencies
+            export PKG_CONFIG_PATH="${pkgs.gtk3.dev}/lib/pkgconfig:${pkgs.gdk-pixbuf.dev}/lib/pkgconfig:${pkgs.webkitgtk_4_1.dev}/lib/pkgconfig:${pkgs.libsoup_3.dev}/lib/pkgconfig:$PKG_CONFIG_PATH"
 
             # NDK .so 文件复制权限设置
             export ANDROID_NDK_LIBS_OUT=$PWD/target/android-lib

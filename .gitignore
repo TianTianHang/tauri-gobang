@@ -10,6 +10,7 @@ dist-ssr/
 # Rust
 src-tauri/binaries/
 src-tauri/target/
+server/target/
 Cargo.lock
 
 # IDE

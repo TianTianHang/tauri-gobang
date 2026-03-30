@@ -1,0 +1,473 @@
+mod auth;
+mod db;
+mod protocol;
+mod room;
+mod types;
+mod ws;
+
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use clap::Parser;
+use serde_json::json;
+use std::path::PathBuf;
+use tower_http::cors::CorsLayer;
+
+use auth::Sessions;
+use room::{Room, RoomMap};
+use types::*;
+
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+#[derive(Parser)]
+#[command(name = "gobang-server", version, about = "Gobang game server")]
+struct Cli {
+    /// Server host
+    #[arg(long, default_value = "0.0.0.0")]
+    host: String,
+
+    /// Server port
+    #[arg(short, long, default_value_t = 3001)]
+    port: u16,
+
+    /// Database path (relative to data dir)
+    #[arg(long, default_value = "database.db")]
+    database: String,
+
+    /// Data directory path
+    #[arg(long, default_value = "")]
+    data_dir: String,
+
+    /// Run as daemon (fork to background)
+    #[arg(long)]
+    daemon: bool,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,gobang_server=debug".parse().unwrap()),
+        )
+        .init();
+
+    let data_dir = if cli.data_dir.is_empty() {
+        dirs_home()?.join(".gobang-server")
+    } else {
+        PathBuf::from(&cli.data_dir)
+    };
+
+    if !data_dir.exists() {
+        std::fs::create_dir_all(&data_dir)?;
+        println!("\x1b[32m\u{2713}\x1b[0m 数据目录已创建: {}", data_dir.display());
+    }
+
+    let db_path = data_dir.join(&cli.database).to_string_lossy().to_string();
+    let pool = db::create_pool(&db_path).await?;
+    db::init_database(&pool).await?;
+    println!("\x1b[32m\u{2713}\x1b[0m 数据库已连接: {}", db_path);
+
+    let config_path = data_dir.join("config.toml");
+    if !config_path.exists() {
+        let default_config = format!(
+            r#"# Gobang Server Configuration
+server_host = "{}"
+server_port = {}
+database_path = "database.db"
+log_level = "info"
+reconnect_timeout_seconds = 30
+password_min_length = 6
+"#,
+            cli.host, cli.port
+        );
+        std::fs::write(&config_path, default_config)?;
+        println!("\x1b[32m\u{2713}\x1b[0m 配置文件已创建: {}", config_path.display());
+    }
+
+    if cli.daemon {
+        daemonize()?;
+    }
+
+    let sessions: Sessions = Arc::new(RwLock::new(std::collections::HashMap::new()));
+    let rooms: RoomMap = Arc::new(RwLock::new(std::collections::HashMap::new()));
+
+    let app_state = ws::AppState {
+        db: pool,
+        sessions,
+        rooms,
+    };
+
+    let app = Router::new()
+        .route("/api/register", post(register))
+        .route("/api/login", post(login))
+        .route("/api/rooms", get(list_rooms).post(create_room))
+        .route("/api/rooms/{room_id}/join", post(join_room))
+        .route("/game/{room_id}", get(ws::ws_handler))
+        .layer(CorsLayer::permissive())
+        .with_state(app_state);
+
+    let addr = format!("{}:{}", cli.host, cli.port);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+
+    println!("\x1b[32m\u{2713}\x1b[0m 服务器启动在: ws://{}:{}", cli.host, cli.port);
+    println!("\x1b[32m\u{2713}\x1b[0m 按 Ctrl+C 停止服务器");
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    println!("\x1b[32m\u{2713}\x1b[0m 服务器已停止");
+
+    Ok(())
+}
+
+fn dirs_home() -> anyhow::Result<PathBuf> {
+    if cfg!(target_os = "windows") {
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            Ok(PathBuf::from(appdata).join("gobang-server"))
+        } else {
+            anyhow::bail!("APPDATA environment variable not set")
+        }
+    } else {
+        Ok(dirs_home_unix())
+    }
+}
+
+fn dirs_home_unix() -> PathBuf {
+    std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp"))
+}
+
+#[cfg(unix)]
+fn daemonize() -> anyhow::Result<()> {
+    use std::process::{Command, Stdio};
+
+    let self_path = std::env::current_exe()?;
+
+    let args: Vec<String> = std::env::args().collect();
+    let filtered_args: Vec<String> = args
+        .iter()
+        .filter(|a| *a != "--daemon")
+        .cloned()
+        .collect();
+
+    Command::new(&self_path)
+        .args(&filtered_args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .stdin(Stdio::null())
+        .spawn()?;
+
+    println!("\x1b[32m\u{2713}\x1b[0m 服务器已在后台运行");
+    std::process::exit(0);
+}
+
+#[cfg(not(unix))]
+fn daemonize() -> anyhow::Result<()> {
+    anyhow::bail!("daemon mode is only supported on Unix systems")
+}
+
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to install CTRL+C handler");
+}
+
+async fn register(
+    State(state): State<ws::AppState>,
+    Json(req): Json<RegisterRequest>,
+) -> impl IntoResponse {
+    let username = req.username.trim().to_string();
+    if username.len() < 3 || username.len() > 20 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "用户名长度需在 3-20 个字符之间"})),
+        );
+    }
+
+    if req.password.len() < 6 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "密码至少需要 6 个字符"})),
+        );
+    }
+
+    let existing = db::find_user_by_username(&state.db, &username).await;
+    match existing {
+        Ok(Some(_)) => (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "用户名已存在"})),
+        ),
+        Ok(None) => {
+            let user_id = auth::generate_id();
+            let hash = match auth::hash_password(&req.password).await {
+                Ok(h) => h,
+                Err(e) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"error": e})),
+                    );
+                }
+            };
+
+            if let Err(e) = db::insert_user(&state.db, &user_id, &username, &hash).await {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": format!("注册失败: {}", e)})),
+                );
+            }
+
+            let token = auth::generate_token();
+            auth::store_session(&state.sessions, token.clone(), user_id.clone()).await;
+
+            (
+                StatusCode::CREATED,
+                Json(json!({
+                    "token": token,
+                    "user_id": user_id,
+                    "username": username,
+                })),
+            )
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("数据库错误: {}", e)})),
+        ),
+    }
+}
+
+async fn login(
+    State(state): State<ws::AppState>,
+    Json(req): Json<LoginRequest>,
+) -> impl IntoResponse {
+    match db::find_user_by_username(&state.db, req.username.trim()).await {
+        Ok(Some(user)) => {
+            match auth::verify_password(&req.password, &user.password_hash).await {
+                Ok(true) => {
+                    let token = auth::generate_token();
+                    auth::store_session(&state.sessions, token.clone(), user.id.clone()).await;
+                    (
+                        StatusCode::OK,
+                        Json(json!({
+                            "token": token,
+                            "user_id": user.id,
+                            "username": user.username,
+                        })),
+                    )
+                }
+                Ok(false) => (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({"error": "用户名或密码错误"})),
+                ),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": e})),
+                ),
+            }
+        }
+        Ok(None) => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "用户名或密码错误"})),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("数据库错误: {}", e)})),
+        ),
+    }
+}
+
+async fn list_rooms(
+    State(state): State<ws::AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let token = match params.get("token") {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "缺少认证令牌"})),
+            );
+        }
+    };
+
+    match auth::verify_token(&state.sessions, token).await {
+        Some(_) => {}
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "无效的认证令牌"})),
+            );
+        }
+    }
+
+    match db::list_waiting_rooms(&state.db).await {
+        Ok(rooms) => (StatusCode::OK, Json(json!({"rooms": rooms}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("获取房间列表失败: {}", e)})),
+        ),
+    }
+}
+
+async fn create_room(
+    State(state): State<ws::AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+    Json(req): Json<CreateRoomRequest>,
+) -> impl IntoResponse {
+    let token = match params.get("token") {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "缺少认证令牌"})),
+            );
+        }
+    };
+
+    let user_id = match auth::verify_token(&state.sessions, token).await {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "无效的认证令牌"})),
+            );
+        }
+    };
+
+    let username = match db::find_user_by_id(&state.db, &user_id).await {
+        Ok(Some(u)) => u.username,
+        _ => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "用户不存在"})),
+            );
+        }
+    };
+
+    let room_id = auth::generate_id();
+    if let Err(e) = db::insert_room(&state.db, &room_id, &req.name, &user_id).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("创建房间失败: {}", e)})),
+        );
+    }
+
+    let (tx, _rx) = tokio::sync::mpsc::channel::<String>(32);
+    let room = Room::new(
+        room_id.clone(),
+        req.name.clone(),
+        user_id.clone(),
+        username,
+        tx,
+    );
+
+    state.rooms.write().await.insert(room_id.clone(), room);
+
+    (
+        StatusCode::CREATED,
+        Json(json!({
+            "room_id": room_id,
+            "room_name": req.name,
+            "ws_url": format!("/game/{}", room_id)
+        })),
+    )
+}
+
+async fn join_room(
+    State(state): State<ws::AppState>,
+    axum::extract::Path(room_id): axum::extract::Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let token = match params.get("token") {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "缺少认证令牌"})),
+            );
+        }
+    };
+
+    let user_id = match auth::verify_token(&state.sessions, token).await {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "无效的认证令牌"})),
+            );
+        }
+    };
+
+    let username = match db::find_user_by_id(&state.db, &user_id).await {
+        Ok(Some(u)) => u.username,
+        _ => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "用户不存在"})),
+            );
+        }
+    };
+
+    let mut rooms = state.rooms.write().await;
+    let room = match rooms.get_mut(&room_id) {
+        Some(r) => r,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "房间不存在"})),
+            );
+        }
+    };
+
+    if room.host_id == user_id {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "无法加入自己创建的房间"})),
+        );
+    }
+
+    if room.status != crate::room::RoomStatus::Waiting {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "房间不可加入"})),
+        );
+    }
+
+    if let Err(e) = db::update_room_player2(&state.db, &room_id, &user_id).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("加入房间失败: {}", e)})),
+        );
+    }
+
+    let (tx, _rx) = tokio::sync::mpsc::channel::<String>(32);
+    room.add_player(user_id, username.clone(), tx);
+
+    let host_username = room
+        .players
+        .get(&room.host_id)
+        .map(|p| p.username.clone())
+        .unwrap_or_default();
+
+    let joined_msg = crate::protocol::game::ServerMessage::OpponentJoined {
+        username,
+    };
+    let joined_json = serde_json::to_string(&joined_msg).unwrap();
+    room.send_to_player(&room.host_id, &joined_json).await;
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "room_id": room_id,
+            "host_username": host_username,
+            "ws_url": format!("/game/{}", room_id)
+        })),
+    )
+}

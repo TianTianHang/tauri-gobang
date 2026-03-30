@@ -1,0 +1,51 @@
+.login-screen {
+  background: var(--panel-bg);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 420px;
+  width: 100%;
+  margin: 16px;
+}
+
+.login-screen h2 {
+  margin: 0 0 20px;
+  text-align: center;
+  color: var(--text-primary);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.toggle-mode-btn {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 14px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.toggle-mode-btn:hover {
+  text-decoration: underline;
+}
+
+.toggle-mode-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (min-width: 768px) {
+  .login-screen {
+    padding: 40px;
+    margin: 24px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  }
+
+  .login-screen h2 {
+    font-size: 28px;
+    margin-bottom: 24px;
+  }
+}

@@ -1,5 +1,4 @@
-import { useState, useCallback } from "react";
-import { Cell, GameState, GameMode, GameStatus, ConnectionInfo, ConnectionStatus } from "../types/game";
+import { Cell, GameState, GameMode, GameStatus } from "../types/game";
 import { BlackStoneIcon, WhiteStoneIcon } from "./Icons";
 import "./StatusBar.css";
 
@@ -10,26 +9,12 @@ interface StatusBarProps {
   myColor?: Cell;
   onMenuOpen: () => void;
   menuOpen: boolean;
-  connectionInfo?: ConnectionInfo | null;
-  connectionStatus?: ConnectionStatus;
+  opponentName?: string;
 }
 
-function StatusBar({ gameState, aiThinking, mode, myColor, onMenuOpen, menuOpen, connectionInfo, connectionStatus }: StatusBarProps) {
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+function StatusBar({ gameState, aiThinking, mode, myColor, onMenuOpen, menuOpen, opponentName }: StatusBarProps) {
   const statusContent = getStatusContent(gameState, mode, myColor);
   const isOnline = mode === "online_host" || mode === "online_client";
-
-  const handleCopyIp = useCallback(async () => {
-    if (!connectionInfo) return;
-    const text = `${connectionInfo.ip}:${connectionInfo.port}`;
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopyFeedback("已复制！");
-      setTimeout(() => setCopyFeedback(null), 2000);
-    } catch (e) {
-      console.error("Copy failed:", e);
-    }
-  }, [connectionInfo]);
 
   return (
     <div className="status-bar">
@@ -37,23 +22,10 @@ function StatusBar({ gameState, aiThinking, mode, myColor, onMenuOpen, menuOpen,
         <span>{statusContent}</span>
         {aiThinking && <span className="thinking-indicator" aria-hidden="true">🤔</span>}
       </div>
-      {isOnline && connectionInfo && (
+      {isOnline && opponentName && (
         <div className="connection-info">
-          <span className={`connection-dot ${connectionStatus || "connected"}`} />
-          <button
-            className="ip-display"
-            onClick={handleCopyIp}
-            aria-label={`房间: ${connectionInfo.ip}:${connectionInfo.port}, 点击复制`}
-          >
-            {copyFeedback ? (
-              <span className="copy-feedback">{copyFeedback}</span>
-            ) : (
-              <>
-                <span className="ip-prefix">{mode === "online_host" ? "房间: " : "已连接: "}</span>
-                <span className="ip-text">{connectionInfo.ip}:{connectionInfo.port}</span>
-              </>
-            )}
-          </button>
+          <span className={`connection-dot connected`} />
+          <span className="ip-prefix">vs {opponentName}</span>
         </div>
       )}
       <button
@@ -73,7 +45,7 @@ function StatusBar({ gameState, aiThinking, mode, myColor, onMenuOpen, menuOpen,
   );
 }
 
-function getStatusContent(state: GameState, mode: GameMode, myColor?: Cell) {
+function getStatusContent(state: GameState, mode: GameMode, myColor?: Cell): React.ReactNode {
   const isOnline = mode === "online_host" || mode === "online_client";
 
   switch (state.status) {

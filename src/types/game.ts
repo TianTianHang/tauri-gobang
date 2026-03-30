@@ -38,14 +38,21 @@ export interface AiMoveResult {
 
 export type Difficulty = "easy" | "medium" | "hard";
 
-export type ConnectionStatus = "connected" | "connecting" | "disconnected";
+export type GameMode =
+  | "menu"
+  | "ai"
+  | "online_host"
+  | "online_client"
+  | "login"
+  | "lobby"
+  | "waiting";
 
 export interface ConnectionInfo {
   ip: string;
   port: number;
 }
 
-export type GameMode = "menu" | "ai" | "online_host" | "online_client" | "host_setup" | "join_setup";
+export type ConnectionStatus = "disconnected" | "connecting" | "connected";
 
 export const BOARD_SIZE = 15;
 
@@ -54,3 +61,45 @@ export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   medium: "中等",
   hard: "困难",
 };
+
+export interface NetworkMessage {
+  type: "move" | "restart_request" | "restart_accept" | "restart_reject" | "disconnect";
+  row?: number;
+  col?: number;
+}
+
+export interface ServerMessage {
+  type: "game_start" | "opponent_joined" | "opponent_disconnected" | "player_reconnected" | "game_ended";
+  black_player?: string;
+  white_player?: string;
+  username?: string;
+  can_reconnect?: boolean;
+  timeout_seconds?: number;
+  winner?: string;
+  reason?: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user_id: string;
+  username: string;
+}
+
+export interface RoomListEntry {
+  id: string;
+  name: string;
+  host_username: string;
+  created_at: number;
+}
+
+export interface CreateRoomResponse {
+  room_id: string;
+  room_name: string;
+  ws_url: string;
+}
+
+export interface JoinRoomResponse {
+  room_id: string;
+  host_username: string;
+  ws_url: string;
+}
