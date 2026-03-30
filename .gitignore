@@ -62,3 +62,10 @@ coverage/
 .lock-wscript
 .turbo/
 binaries/
+
+# Android signing
+*.jks
+keystore.properties
+src-tauri/android/keystore.properties
+
+.claude
