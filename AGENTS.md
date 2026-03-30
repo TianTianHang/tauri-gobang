@@ -6,8 +6,12 @@ Tauri 2 + React 19 + TypeScript desktop and Android application (Gobang/Five-in-
 Frontend in `src/`, Rust backend in `src-tauri/src/`. Communication via Tauri `invoke` IPC and Tauri events.
 Android support via `android_rapfi.rs` module (gated with `#[cfg(target_os = "android")]`).
 
+**Server Architecture**: Independent Rust server in `server/` for online multiplayer.
+Uses axum + SQLite + WebSocket for room management, user authentication, and game message relay.
+
 ## Build & Run Commands
 
+**Client (Tauri Desktop/Android):**
 ```bash
 pnpm dev              # Start Vite dev server (port 1420)
 pnpm build            # Type-check (tsc) + build frontend
@@ -16,6 +20,17 @@ pnpm tauri dev        # Full Tauri desktop app in dev mode
 pnpm tauri build      # Build production desktop app
 pnpm tauri android dev  # Full Tauri Android app in dev mode
 pnpm tauri build --target android  # Build production Android APK
+```
+
+**Server (Online Multiplayer):**
+```bash
+cd server
+cargo run                         # Start server (default: port 3001)
+cargo run -- --port 8080          # Custom port
+cargo run -- --daemon             # Background mode (Unix only)
+cargo test                        # Run all tests (unit + integration)
+cargo build --release             # Build production binary
+./build.sh                        # Cross-platform build script
 ```
 
 ## Nix开发环境 (推荐)
@@ -92,9 +107,22 @@ cd src-tauri && cargo test --test ai     # Run specific test module (when added)
 
 ## Testing
 
-No test framework is configured yet. When adding tests:
-- **Rust**: Add `#[cfg(test)]` modules in source files; run all with `cargo test`, single module with `cargo test -- <test_name>`
-- **Frontend**: Add vitest; tests go in `__tests__/` or co-located as `*.test.tsx`
+**Rust (Server & Tauri Backend):**
+```bash
+cd server && cargo test              # Run all server tests (unit + integration)
+cd src-tauri && cargo test           # Run all Tauri backend tests
+cargo test --test <test_name>        # Run specific test
+```
+
+**Frontend:**
+```bash
+pnpm test                            # Run frontend tests (vitest)
+pnpm test:watch                      # Watch mode for development
+```
+
+Tests located in:
+- **Server**: `#[cfg(test)]` modules in `server/src/*.rs` (auth.rs, room.rs, protocol/, main.rs integration tests)
+- **Frontend**: `src/__tests__/*.test.ts`
 
 ## Linting & Type-Checking
 
@@ -129,6 +157,22 @@ src-tauri/src/
   network.rs                # TCP networking, Tauri event emission
   rapfi.rs                  # Rapfi engine wrapper, path resolution
   android_rapfi.rs          # Android binary extraction (cfg-gated)
+server/
+  Cargo.toml                # Server dependencies
+  src/
+    main.rs                 # Entry point, CLI args, HTTP routes
+    auth.rs                 # Password hashing, session management
+    db.rs                   # SQLite connection, queries
+    room.rs                 # Room state, in-memory store
+    ws.rs                   # WebSocket handler, message relay
+    types.rs                # API request/response types
+    protocol/
+      game.rs               # WebSocket message enums
+  migrations/init.sql       # Database schema
+  deploy/
+    gobang-server.service   # systemd service template
+  build.sh                  # Cross-platform build script
+  README.md                 # Server documentation
 ```
 
 ## TypeScript / React Style

@@ -180,6 +180,16 @@ async fn shutdown_signal() {
         .expect("failed to install CTRL+C handler");
 }
 
+fn extract_token(headers: &axum::http::HeaderMap, query: &std::collections::HashMap<String, String>) -> Option<String> {
+    if let Some(auth_header) = headers.get("Authorization") {
+        let auth_str = auth_header.to_str().ok()?;
+        if auth_str.starts_with("Bearer ") {
+            return Some(auth_str[7..].to_string());
+        }
+    }
+    query.get("token").cloned()
+}
+
 async fn register(
     State(state): State<ws::AppState>,
     Json(req): Json<RegisterRequest>,
@@ -285,9 +295,10 @@ async fn login(
 
 async fn list_rooms(
     State(state): State<ws::AppState>,
+    headers: axum::http::HeaderMap,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
-    let token = match params.get("token") {
+    let token = match extract_token(&headers, &params) {
         Some(t) => t,
         None => {
             return (
@@ -297,7 +308,7 @@ async fn list_rooms(
         }
     };
 
-    match auth::verify_token(&state.sessions, token).await {
+    match auth::verify_token(&state.sessions, &token).await {
         Some(_) => {}
         None => {
             return (
@@ -318,10 +329,11 @@ async fn list_rooms(
 
 async fn create_room(
     State(state): State<ws::AppState>,
+    headers: axum::http::HeaderMap,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
     Json(req): Json<CreateRoomRequest>,
 ) -> impl IntoResponse {
-    let token = match params.get("token") {
+    let token = match extract_token(&headers, &params) {
         Some(t) => t,
         None => {
             return (
@@ -331,7 +343,7 @@ async fn create_room(
         }
     };
 
-    let user_id = match auth::verify_token(&state.sessions, token).await {
+    let user_id = match auth::verify_token(&state.sessions, &token).await {
         Some(id) => id,
         None => {
             return (
@@ -382,10 +394,11 @@ async fn create_room(
 
 async fn join_room(
     State(state): State<ws::AppState>,
+    headers: axum::http::HeaderMap,
     axum::extract::Path(room_id): axum::extract::Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
-    let token = match params.get("token") {
+    let token = match extract_token(&headers, &params) {
         Some(t) => t,
         None => {
             return (
@@ -395,7 +408,7 @@ async fn join_room(
         }
     };
 
-    let user_id = match auth::verify_token(&state.sessions, token).await {
+    let user_id = match auth::verify_token(&state.sessions, &token).await {
         Some(id) => id,
         None => {
             return (
@@ -470,4 +483,249 @@ async fn join_room(
             "ws_url": format!("/game/{}", room_id)
         })),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode, Method};
+    use tower::util::ServiceExt;
+
+    async fn create_test_app() -> Router {
+        let pool = db::create_pool(":memory:").await.unwrap();
+        db::init_database(&pool).await.unwrap();
+
+        let sessions: Sessions = Arc::new(RwLock::new(std::collections::HashMap::new()));
+        let rooms: RoomMap = Arc::new(RwLock::new(std::collections::HashMap::new()));
+
+        let app_state = ws::AppState {
+            db: pool,
+            sessions,
+            rooms,
+        };
+
+        Router::new()
+            .route("/api/register", post(register))
+            .route("/api/login", post(login))
+            .route("/api/rooms", get(list_rooms).post(create_room))
+            .route("/api/rooms/{room_id}/join", post(join_room))
+            .layer(CorsLayer::permissive())
+            .with_state(app_state)
+    }
+
+    async fn register_user(app: &Router, username: &str, password: &str) -> serde_json::Value {
+        let body = format!(r#"{{"username":"{}","password":"{}"}}"#, username, password);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/api/register")
+            .header("Content-Type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let res = app.clone().oneshot(req).await.unwrap();
+        let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        serde_json::from_slice(&body_bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_register_success() {
+        let app = create_test_app().await;
+        let body = register_user(&app, "testuser", "password123").await;
+        assert!(body.get("token").is_some());
+        assert!(body.get("user_id").is_some());
+        assert_eq!(body["username"], "testuser");
+    }
+
+    #[tokio::test]
+    async fn test_register_validation_username_too_short() {
+        let app = create_test_app().await;
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/api/register")
+            .header("Content-Type", "application/json")
+            .body(Body::from(r#"{"username":"ab","password":"password123"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_register_validation_password_too_short() {
+        let app = create_test_app().await;
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/api/register")
+            .header("Content-Type", "application/json")
+            .body(Body::from(r#"{"username":"testuser","password":"12345"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_register_duplicate_username() {
+        let app = create_test_app().await;
+        register_user(&app, "testuser", "password123").await;
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/api/register")
+            .header("Content-Type", "application/json")
+            .body(Body::from(r#"{"username":"testuser","password":"password456"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn test_login_success() {
+        let app = create_test_app().await;
+        register_user(&app, "testuser", "password123").await;
+
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/api/login")
+            .header("Content-Type", "application/json")
+            .body(Body::from(r#"{"username":"testuser","password":"password123"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert!(json.get("token").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_login_wrong_password() {
+        let app = create_test_app().await;
+        register_user(&app, "testuser", "password123").await;
+
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/api/login")
+            .header("Content-Type", "application/json")
+            .body(Body::from(r#"{"username":"testuser","password":"wrongpass"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_list_rooms_unauthorized() {
+        let app = create_test_app().await;
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/api/rooms")
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_list_rooms_invalid_token() {
+        let app = create_test_app().await;
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/api/rooms?token=invalid")
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_create_and_list_rooms() {
+        let app = create_test_app().await;
+        let reg = register_user(&app, "alice", "password123").await;
+        let token = reg["token"].as_str().unwrap();
+
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/rooms?token={}", token))
+            .header("Content-Type", "application/json")
+            .body(Body::from(r#"{"name":"Test Room"}"#))
+            .unwrap();
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(format!("/api/rooms?token={}", token))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(json["rooms"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_join_room_success() {
+        let app = create_test_app().await;
+        let reg1 = register_user(&app, "alice", "password123").await;
+        let reg2 = register_user(&app, "bob", "password123").await;
+        let token1 = reg1["token"].as_str().unwrap();
+        let token2 = reg2["token"].as_str().unwrap();
+
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/rooms?token={}", token1))
+            .header("Content-Type", "application/json")
+            .body(Body::from(r#"{"name":"Test Room"}"#))
+            .unwrap();
+        let res = app.clone().oneshot(req).await.unwrap();
+        let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let room: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        let room_id = room["room_id"].as_str().unwrap();
+
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/rooms/{}/join?token={}", room_id, token2))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_join_own_room_rejected() {
+        let app = create_test_app().await;
+        let reg = register_user(&app, "alice", "password123").await;
+        let token = reg["token"].as_str().unwrap();
+
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/rooms?token={}", token))
+            .header("Content-Type", "application/json")
+            .body(Body::from(r#"{"name":"Test Room"}"#))
+            .unwrap();
+        let res = app.clone().oneshot(req).await.unwrap();
+        let body_bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let room: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        let room_id = room["room_id"].as_str().unwrap();
+
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/rooms/{}/join?token={}", room_id, token))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_join_nonexistent_room() {
+        let app = create_test_app().await;
+        let reg = register_user(&app, "alice", "password123").await;
+        let token = reg["token"].as_str().unwrap();
+
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/rooms/nonexistent/join?token={}", token))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
 }

@@ -62,6 +62,7 @@
             gdk-pixbuf
             webkitgtk_4_1
             libsoup_3
+            python3
           ];
 
           shellHook = ''

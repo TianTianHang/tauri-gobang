@@ -109,3 +109,128 @@ impl Room {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_room(host_id: &str, host_username: &str) -> (Room, mpsc::Receiver<String>) {
+        let (tx, rx) = mpsc::channel(32);
+        let room = Room::new(
+            "room-1".to_string(),
+            "Test Room".to_string(),
+            host_id.to_string(),
+            host_username.to_string(),
+            tx,
+        );
+        (room, rx)
+    }
+
+    #[test]
+    fn test_room_new() {
+        let (room, _rx) = make_room("host-1", "Alice");
+        assert_eq!(room.status, RoomStatus::Waiting);
+        assert_eq!(room.host_id, "host-1");
+        assert!(room.player2_id.is_none());
+        assert_eq!(room.players.len(), 1);
+        assert!(room.disconnected.is_none());
+    }
+
+    #[test]
+    fn test_add_player() {
+        let (mut room, _rx) = make_room("host-1", "Alice");
+        let (tx2, _rx2) = mpsc::channel(32);
+        room.add_player("player-2".to_string(), "Bob".to_string(), tx2);
+
+        assert_eq!(room.status, RoomStatus::Playing);
+        assert_eq!(room.player2_id, Some("player-2".to_string()));
+        assert_eq!(room.players.len(), 2);
+    }
+
+    #[test]
+    fn test_is_participant() {
+        let (room, _rx) = make_room("host-1", "Alice");
+        assert!(room.is_participant("host-1"));
+        assert!(!room.is_participant("other-user"));
+    }
+
+    #[test]
+    fn test_is_participant_with_player2() {
+        let (mut room, _rx) = make_room("host-1", "Alice");
+        let (tx2, _rx2) = mpsc::channel(32);
+        room.add_player("player-2".to_string(), "Bob".to_string(), tx2);
+
+        assert!(room.is_participant("host-1"));
+        assert!(room.is_participant("player-2"));
+        assert!(!room.is_participant("other-user"));
+    }
+
+    #[test]
+    fn test_get_opponent_id() {
+        let (mut room, _rx) = make_room("host-1", "Alice");
+        let (tx2, _rx2) = mpsc::channel(32);
+        room.add_player("player-2".to_string(), "Bob".to_string(), tx2);
+
+        assert_eq!(room.get_opponent_id("host-1"), Some("player-2".to_string()));
+        assert_eq!(room.get_opponent_id("player-2"), Some("host-1".to_string()));
+        assert_eq!(room.get_opponent_id("unknown"), None);
+    }
+
+    #[test]
+    fn test_remove_player() {
+        let (mut room, _rx) = make_room("host-1", "Alice");
+        let (tx2, _rx2) = mpsc::channel(32);
+        room.add_player("player-2".to_string(), "Bob".to_string(), tx2);
+
+        room.remove_player("player-2");
+        assert_eq!(room.players.len(), 1);
+        assert!(!room.is_empty());
+    }
+
+    #[test]
+    fn test_is_empty() {
+        let (mut room, _rx) = make_room("host-1", "Alice");
+        assert!(!room.is_empty());
+        room.remove_player("host-1");
+        assert!(room.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_send_to_player() {
+        let (room, mut rx) = make_room("host-1", "Alice");
+        let sent = room.send_to_player("host-1", "hello").await;
+        assert!(sent);
+        let msg = rx.recv().await;
+        assert_eq!(msg, Some("hello".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_send_to_player_nonexistent() {
+        let (room, _rx) = make_room("host-1", "Alice");
+        let sent = room.send_to_player("nonexistent", "hello").await;
+        assert!(!sent);
+    }
+
+    #[tokio::test]
+    async fn test_send_to_opponent() {
+        let (mut room, _rx) = make_room("host-1", "Alice");
+        let (tx2, mut rx2) = mpsc::channel(32);
+        room.add_player("player-2".to_string(), "Bob".to_string(), tx2);
+
+        let sent = room.send_to_opponent("host-1", "move").await;
+        assert!(sent);
+        let msg = rx2.recv().await;
+        assert_eq!(msg, Some("move".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_broadcast() {
+        let (mut room, mut rx1) = make_room("host-1", "Alice");
+        let (tx2, mut rx2) = mpsc::channel(32);
+        room.add_player("player-2".to_string(), "Bob".to_string(), tx2);
+
+        room.broadcast("game_start").await;
+        assert_eq!(rx1.recv().await, Some("game_start".to_string()));
+        assert_eq!(rx2.recv().await, Some("game_start".to_string()));
+    }
+}
