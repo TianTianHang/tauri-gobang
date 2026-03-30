@@ -77,3 +77,5 @@ keystore.properties
 src-tauri/android/keystore.properties
 
 .claude
+
+logs
