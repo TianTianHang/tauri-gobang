@@ -7,6 +7,7 @@ import {
   EyeOffIcon,
   ExclamationCircleIcon,
 } from "./Icons";
+import { register, login } from "../api";
 import "./LoginScreen.css";
 
 interface LoginScreenProps {
@@ -62,7 +63,6 @@ function LoginScreen({ onLoginSuccess, onBack }: LoginScreenProps) {
 
     setLoading(true);
     try {
-      const { register, login } = await import("../api");
       if (isRegister) {
         await register(username.trim(), password);
       }
