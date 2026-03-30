@@ -6,7 +6,7 @@
 
 ## 功能
 
-- 人机对战 — 集成 [Rapfi](https://github.com/aawwsss/Rapfi) 五子棋引擎（Alpha-Beta + NNUE，2000+ ELO）
+- 人机对战 — 集成 [Rapfi](https://github.com/dhbloo/rapfi) 五子棋引擎（Alpha-Beta + NNUE，2000+ ELO）
 - 三档难度 — 简单 / 中等 / 困难
 - 局域网联机 — TCP P2P，支持创建房间和加入房间
 - 悔棋 — 人机模式下可悔两步
@@ -25,7 +25,56 @@
 | AI 引擎 | Rapfi（外部二进制，Gomocup 协议） |
 | 联网 | TCP（line-delimited JSON） |
 
-## 快速开始
+## 🚀 快速开始 (Nix - 推荐)
+
+### 前置要求
+- Nix package manager (安装: https://nixos.org/download.html)
+- direnv (可选，用于自动加载环境)
+
+### 一键启动
+
+```bash
+# 克隆仓库
+git clone --recursive <repo-url>
+cd tauri-gobang
+
+# 使用Nix启动环境
+nix develop
+
+# 安装依赖
+pnpm install
+
+# 下载 Rapfi 引擎
+cd src-tauri && ./download-sidecar.sh && cd ..
+
+# Android开发
+pnpm tauri android dev
+```
+
+### 使用direnv（自动加载）
+
+```bash
+# 安装direnv
+# Ubuntu/Debian: sudo apt-get install direnv
+# Arch: sudo pacman -S direnv
+# Fedora: sudo dnf install direnv
+
+# 允许.envrc
+direnv allow
+
+# 之后每次进入目录自动激活环境
+cd tauri-gobang/
+```
+
+### 环境包含
+- Node.js 24 + pnpm
+- Rust stable + Android targets
+- Android SDK 35 + NDK 26.1.10909125
+- JDK 17 + Gradle
+
+## 📦 快速开始 (传统安装)
+
+**不使用Nix？请确保已安装：**
 
 ```bash
 # 克隆（含子模块）
@@ -87,10 +136,31 @@ docs/                             # 文档
 - 最低版本：Android 7.0 (API 24)
 - 引擎从 APK 的 `jniLibs` 加载，无需额外权限
 
+### 使用模拟器（Nix环境）
+
 ```bash
+# 1. 进入Nix环境
+nix develop
+
+# 2. 创建虚拟设备
+bash scripts/create-android-avd.sh
+
+# 3. 启动模拟器
+emulator -avd tauri-gobang-avd
+
+# 4. 在另一个终端运行应用
+pnpm tauri android dev
+```
+
+**使用真实设备：**
+
+```bash
+# 启用USB调试，连接设备
 pnpm tauri android dev     # 开发模式
 pnpm tauri android build   # 构建 APK
 ```
+
+详细说明: [Android模拟器指南](docs/ANDROID_EMULATOR_GUIDE.md)
 
 ## 更新 NNUE 权重
 

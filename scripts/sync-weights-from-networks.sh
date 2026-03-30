@@ -5,7 +5,7 @@ set -o pipefail  # Exit on pipe failure
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-NETWORKS_DIR="$PROJECT_ROOT/third-party/rapfi/Networks/mix9svq"
+NETWORKS_DIR="$PROJECT_ROOT/third-party/rapfi/Networks"
 NETWORKS_CONFIG_DIR="$PROJECT_ROOT/third-party/rapfi/Networks/config-example"
 BINARIES_DIR="$PROJECT_ROOT/src-tauri/binaries"
 CONFIG_FILE="$BINARIES_DIR/config.toml"
@@ -61,6 +61,11 @@ warning_msg() {
     echo -e "${YELLOW}⚠ $1${NC}"
 }
 
+# Function to log info message
+info_msg() {
+    echo -e "ℹ $1"
+}
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -113,12 +118,13 @@ get_networks_sha() {
     fi
 }
 
-# Weight files to copy
+# Weight files to copy (relative to NETWORKS_DIR)
 declare -a WEIGHT_FILES=(
-    "mix9svqfreestyle_bsmix.bin.lz4"
-    "mix9svqrenju_bs15_black.bin.lz4"
-    "mix9svqrenju_bs15_white.bin.lz4"
-    "mix9svqstandard_bs15.bin.lz4"
+    "mix9svq/mix9svqfreestyle_bsmix.bin.lz4"
+    "mix9svq/mix9svqrenju_bs15_black.bin.lz4"
+    "mix9svq/mix9svqrenju_bs15_white.bin.lz4"
+    "mix9svq/mix9svqstandard_bs15.bin.lz4"
+    "classical/model210901.bin"
 )
 
 # Function to copy weight files
@@ -130,7 +136,8 @@ copy_weight_files() {
 
     for weight_file in "${WEIGHT_FILES[@]}"; do
         local src_file="$NETWORKS_DIR/$weight_file"
-        local dest_file="$BINARIES_DIR/$weight_file"
+        local filename=$(basename "$weight_file")
+        local dest_file="$BINARIES_DIR/$filename"
 
         if [ ! -f "$src_file" ]; then
             error_exit "Weight file not found: $src_file"
@@ -138,21 +145,34 @@ copy_weight_files() {
 
         # Check if destination file exists
         if [ -f "$dest_file" ] && [ "$FORCE" != true ]; then
-            warning_msg "File already exists: $weight_file"
+            warning_msg "File already exists: $filename"
         fi
 
         cp "$src_file" "$dest_file"
         local file_size=$(stat -c%s "$dest_file" 2>/dev/null || stat -f%z "$dest_file" 2>/dev/null)
+        local size_kb=$(echo "scale=2; $file_size / 1024" | bc)
         local size_mb=$(echo "scale=2; $file_size / 1024 / 1024" | bc)
 
-        # Verify file size (9-10 MB expected range)
-        local size_mb_int=$(echo "$size_mb" | cut -d. -f1)
-        if [ "$size_mb_int" -lt 9 ] || [ "$size_mb_int" -gt 10 ]; then
-            warning_msg "File size $size_mb MB is outside expected range (9-10 MB)"
+        # Verify file size based on file type
+        if [[ "$filename" == *.bin.lz4 ]]; then
+            # NNUE weights: 9-10 MB expected
+            local size_mb_int=$(echo "$size_mb" | cut -d. -f1)
+            if [ "$size_mb_int" -lt 9 ] || [ "$size_mb_int" -gt 10 ]; then
+                warning_msg "File size $size_mb MB is outside expected range (9-10 MB)"
+            fi
+            echo "  ✓ $filename ($size_mb MB)"
+        elif [[ "$filename" == *.bin ]]; then
+            # Classical model: 10-100 KB expected
+            local size_kb_int=$(echo "$size_kb" | cut -d. -f1)
+            if [ "$size_kb_int" -lt 10 ] || [ "$size_kb_int" -gt 100 ]; then
+                warning_msg "File size $size_kb KB is outside expected range (10-100 KB)"
+            fi
+            echo "  ✓ $filename ($size_kb KB)"
+        else
+            echo "  ✓ $filename ($size_mb MB)"
         fi
 
         total_size_bytes=$((total_size_bytes + file_size))
-        echo "  ✓ $weight_file ($size_mb MB)"
         copied_count=$((copied_count + 1))
     done
 
@@ -213,8 +233,9 @@ check_existing_files() {
     local existing_files=()
 
     for weight_file in "${WEIGHT_FILES[@]}"; do
-        if [ -f "$BINARIES_DIR/$weight_file" ]; then
-            existing_files+=("$weight_file")
+        local filename=$(basename "$weight_file")
+        if [ -f "$BINARIES_DIR/$filename" ]; then
+            existing_files+=("$filename")
         fi
     done
 
@@ -241,6 +262,7 @@ stage_git_files() {
     echo ""
     cd "$PROJECT_ROOT"
     git add src-tauri/binaries/*.bin.lz4
+    git add src-tauri/binaries/*.bin
     git add "$CONFIG_FILE"
     success_msg "Weight files staged for git commit"
 
@@ -272,12 +294,18 @@ display_info() {
     # Display current weight files
     echo "Current weight files in $BINARIES_DIR:"
     for weight_file in "${WEIGHT_FILES[@]}"; do
-        if [ -f "$BINARIES_DIR/$weight_file" ]; then
-            local file_size=$(stat -c%s "$BINARIES_DIR/$weight_file" 2>/dev/null || stat -f%z "$BINARIES_DIR/$weight_file" 2>/dev/null)
+        local filename=$(basename "$weight_file")
+        if [ -f "$BINARIES_DIR/$filename" ]; then
+            local file_size=$(stat -c%s "$BINARIES_DIR/$filename" 2>/dev/null || stat -f%z "$BINARIES_DIR/$filename" 2>/dev/null)
+            local size_kb=$(echo "scale=2; $file_size / 1024" | bc)
             local size_mb=$(echo "scale=2; $file_size / 1024 / 1024" | bc)
-            echo "  ✓ $weight_file ($size_mb MB)"
+            if [[ "$filename" == *.bin ]]; then
+                echo "  ✓ $filename ($size_kb KB)"
+            else
+                echo "  ✓ $filename ($size_mb MB)"
+            fi
         else
-            echo "  ✗ $weight_file (missing)"
+            echo "  ✗ $filename (missing)"
         fi
     done
 

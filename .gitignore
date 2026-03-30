@@ -35,6 +35,11 @@ pnpm-debug.log*
 .env.local
 .env.*.local
 
+# Nix
+.envrc.local
+.direnv/
+.flake-lock
+
 # Cache
 .cache/
 .parcel-cache/

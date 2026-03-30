@@ -18,6 +18,70 @@ pnpm tauri android dev  # Full Tauri Android app in dev mode
 pnpm tauri build --target android  # Build production Android APK
 ```
 
+## Nix开发环境 (推荐)
+
+```bash
+nix develop                   # 进入Android开发环境
+nix flake update              # 更新依赖
+nix flake check               # 验证配置
+```
+
+**首次使用（带direnv）：**
+```bash
+# 安装direnv（如果还没有）
+# Ubuntu/Debian: sudo apt-get install direnv
+# Arch: sudo pacman -S direnv
+# Fedora: sudo dnf install direnv
+
+# 配置shell hook（一次性）
+# Bash: echo 'eval "$(direnv hook bash)"' >> ~/.bashrc
+# Zsh: echo 'eval "$(direnv hook zsh)"' >> ~/.zshrc
+
+# 允许.envrc
+direnv allow
+
+# 之后每次进入目录自动激活环境
+```
+
+## Android模拟器管理
+
+```bash
+# 创建虚拟设备(AVD)
+bash scripts/create-android-avd.sh
+
+# 列出所有AVD
+emulator -list-avds
+
+# 启动模拟器
+emulator -avd tauri-gobang-avd
+
+# 使用快照加速启动
+emulator -avd tauri-gobang-avd -snapshot quickboot
+
+# 无窗口模式（CI/CD）
+emulator -avd tauri-gobang-avd -no-window -no-audio
+
+# 删除AVD
+avdmanager delete avd -n tauri-gobang-avd
+```
+
+**ADB调试：**
+```bash
+# 查看连接的设备
+adb devices
+
+# 安装APK
+adb install app-debug.apk
+
+# 查看日志
+adb logcat | grep -i tauri
+
+# 查看设备信息
+adb shell getprop ro.product.model
+```
+
+详细说明: [docs/ANDROID_EMULATOR_GUIDE.md](docs/ANDROID_EMULATOR_GUIDE.md)
+
 **Rust backend:**
 ```bash
 cd src-tauri && cargo check              # Type-check Rust code
