@@ -73,6 +73,7 @@ binaries/
 
 # Android signing
 *.jks
+*.keystore
 keystore.properties
 src-tauri/android/keystore.properties
 
