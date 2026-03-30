@@ -67,6 +67,11 @@
             export GRADLE_OPTS="-Dorg.gradle.project.android.aapt2FromMavenOverride=$ANDROID_HOME/build-tools/36.0.0/aapt2"
             export PATH=$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
 
+            # NDK .so 文件复制权限设置
+            export ANDROID_NDK_LIBS_OUT=$PWD/target/android-lib
+            mkdir -p $ANDROID_NDK_LIBS_OUT || true
+            chmod -R u+w $ANDROID_NDK_LIBS_OUT 2>/dev/null || true
+
             echo "🤖 Tauri Gobang - Android开发环境"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "Node.js: $(node --version)"
