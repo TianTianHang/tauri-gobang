@@ -103,6 +103,15 @@ function MenuDrawer({
                   悔棋
                 </button>
               )}
+              {mode === "local_pvp" && (
+                <button
+                  className="drawer-btn"
+                  onClick={() => { onUndo(); onClose(); }}
+                  disabled={gameState.history.length < 2}
+                >
+                  悔棋
+                </button>
+              )}
               {isOnline && onRestartRequest && (
                 <button
                   className="drawer-btn"
@@ -156,7 +165,7 @@ function MenuDrawer({
             <div className="info-row">
               <span className="info-label">模式</span>
               <span className="info-value">
-                {mode === "ai" ? "人机对战" : isOnline ? "联机对战" : ""}
+                {mode === "ai" ? "人机对战" : mode === "local_pvp" ? "本地对战" : isOnline ? "联机对战" : ""}
               </span>
             </div>
           </div>

@@ -140,7 +140,7 @@ function getResultType(
     return myColor === Cell.White ? "victory" : "defeat";
   }
 
-  if (mode === "ai") {
+  if (mode === "ai" || mode === "local_pvp") {
     return gameState.status === GameStatus.BlackWins ? "victory" : "defeat";
   }
 

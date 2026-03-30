@@ -1,12 +1,13 @@
 import "./MainMenu.css";
-import { RobotIcon, GlobeIcon } from "./Icons";
+import { RobotIcon, UserGroupIcon, GlobeIcon } from "./Icons";
 
 interface MainMenuProps {
   onPlayAI: () => void;
+  onLocalPlay: () => void;
   onOnlinePlay: () => void;
 }
 
-function MainMenu({ onPlayAI, onOnlinePlay }: MainMenuProps) {
+function MainMenu({ onPlayAI, onLocalPlay, onOnlinePlay }: MainMenuProps) {
   return (
     <div className="main-menu">
       <div className="menu-container">
@@ -18,6 +19,11 @@ function MainMenu({ onPlayAI, onOnlinePlay }: MainMenuProps) {
             <RobotIcon className="btn-icon" />
             <span className="btn-text">人机对战</span>
             <span className="btn-desc">挑战 AI 棋手</span>
+          </button>
+          <button className="menu-btn" onClick={onLocalPlay}>
+            <UserGroupIcon className="btn-icon" />
+            <span className="btn-text">本地对战</span>
+            <span className="btn-desc">双人同屏轮流下棋</span>
           </button>
           <button className="menu-btn" onClick={onOnlinePlay}>
             <GlobeIcon className="btn-icon" />

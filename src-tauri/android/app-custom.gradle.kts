@@ -11,7 +11,7 @@ import java.io.FileInputStream
 import java.util.Properties
 
 // === Signing Configuration ===
-val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystorePropertiesFile = file("../../../android/keystore.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))

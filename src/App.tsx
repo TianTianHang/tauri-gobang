@@ -119,6 +119,118 @@ function App() {
     }
   }, []);
 
+  const createWsMessageHandler = useCallback((
+    role: "host" | "client" | null,
+  ) => {
+    return (event: MessageEvent) => {
+      try {
+        const msg: ServerMessage = JSON.parse(event.data);
+        switch (msg.type) {
+          case "game_start": {
+            if (!role) break;
+            const black = msg.black_player!;
+            const white = msg.white_player!;
+            const oppName = role === "host" ? white : black;
+            setOpponentName(oppName);
+            if (!gameStateRef.current) {
+              invoke<GameState>("new_game").then((state) => {
+                setGameState(state);
+                setLastMove(null);
+                setRestartRequested(false);
+                gameStartTimeRef.current = Date.now();
+                setGameDuration(0);
+                setMode(role === "host" ? "online_host" : "online_client");
+              });
+            } else {
+              setMode(role === "host" ? "online_host" : "online_client");
+            }
+            break;
+          }
+          case "opponent_joined": {
+            if (msg.username) {
+              setOpponentName(msg.username);
+            }
+            break;
+          }
+          case "opponent_disconnected": {
+            setShowReconnect(true);
+            setReconnectTimeout(msg.timeout_seconds || 30);
+            break;
+          }
+          case "player_reconnected": {
+            setShowReconnect(false);
+            break;
+          }
+          case "game_ended": {
+            setShowReconnect(false);
+            if (gameStateRef.current) {
+              let endStatus: GameStatus;
+              if (msg.reason === "draw") {
+                endStatus = GameStatus.Draw;
+              } else {
+                endStatus = GameStatus.BlackWins;
+              }
+              setGameState({
+                ...gameStateRef.current,
+                status: endStatus,
+              });
+            }
+            break;
+          }
+          case "game_state_sync": {
+            if (msg.moves && msg.moves.length > 0) {
+              (async () => {
+                try {
+                  let state = await invoke<GameState>("new_game");
+                  for (const move of msg.moves!) {
+                    const result = await invoke<MoveResult>("make_move", {
+                      state, row: move.row, col: move.col,
+                    });
+                    state = result.state;
+                  }
+                  setGameState(state);
+                  const last = state.history[state.history.length - 1];
+                  setLastMove(last ? { row: last.row, col: last.col } : null);
+                } catch (e) {
+                  console.error("[WS] Game state sync failed:", e);
+                }
+              })();
+            }
+            break;
+          }
+          default: {
+            const netMsg = msg as unknown as NetworkMessage;
+            if (netMsg.type === "move" && netMsg.row !== undefined && netMsg.col !== undefined) {
+              const currentState = gameStateRef.current;
+              if (currentState && currentState.status === GameStatus.Playing) {
+                invoke<MoveResult>("make_move", { state: currentState, row: netMsg.row, col: netMsg.col })
+                  .then((result) => {
+                    setGameState(result.state);
+                    setLastMove({ row: netMsg.row!, col: netMsg.col! });
+                  })
+                  .catch(console.error);
+              }
+            } else if (netMsg.type === "restart_request") {
+              setRestartRequested(true);
+            } else if (netMsg.type === "restart_accept") {
+              invoke<GameState>("new_game").then((state) => {
+                setGameState(state);
+                setLastMove(null);
+                setRestartRequested(false);
+                gameStartTimeRef.current = Date.now();
+              });
+            } else if (netMsg.type === "restart_reject") {
+              setRestartRequested(false);
+            }
+            break;
+          }
+        }
+      } catch (e) {
+        console.error("[WS] Failed to parse message:", event.data, e);
+      }
+    };
+  }, [username]);
+
   const connectWs = useCallback(
     (roomId: string, tok: string, role: "host" | "client"): WebSocket => {
       closeWs();
@@ -129,82 +241,7 @@ function App() {
         console.log("[WS] Connected to", wsUrl);
       };
 
-      ws.onmessage = (event) => {
-        try {
-          const msg: ServerMessage = JSON.parse(event.data);
-          switch (msg.type) {
-            case "game_start": {
-              const black = msg.black_player!;
-              const white = msg.white_player!;
-              const oppName = role === "host" ? white : black;
-              setOpponentName(oppName);
-              invoke<GameState>("new_game").then((state) => {
-                setGameState(state);
-                setLastMove(null);
-                setRestartRequested(false);
-                gameStartTimeRef.current = Date.now();
-                setGameDuration(0);
-                setMode(role === "host" ? "online_host" : "online_client");
-              });
-              break;
-            }
-            case "opponent_joined": {
-              if (msg.username) {
-                setOpponentName(msg.username);
-              }
-              break;
-            }
-            case "opponent_disconnected": {
-              setShowReconnect(true);
-              setReconnectTimeout(msg.timeout_seconds || 30);
-              break;
-            }
-            case "player_reconnected": {
-              setShowReconnect(false);
-              break;
-            }
-            case "game_ended": {
-              setShowReconnect(false);
-              if (gameStateRef.current) {
-                setGameState({
-                  ...gameStateRef.current,
-                  status: GameStatus.Draw,
-                });
-              }
-              break;
-            }
-            default: {
-              // Game messages (move, restart, etc.)
-              const netMsg = msg as unknown as NetworkMessage;
-              if (netMsg.type === "move" && netMsg.row !== undefined && netMsg.col !== undefined) {
-                const currentState = gameStateRef.current;
-                if (currentState && currentState.status === GameStatus.Playing) {
-                  invoke<MoveResult>("make_move", { state: currentState, row: netMsg.row, col: netMsg.col })
-                    .then((result) => {
-                      setGameState(result.state);
-                      setLastMove({ row: netMsg.row!, col: netMsg.col! });
-                    })
-                    .catch(console.error);
-                }
-              } else if (netMsg.type === "restart_request") {
-                setRestartRequested(true);
-              } else if (netMsg.type === "restart_accept") {
-                invoke<GameState>("new_game").then((state) => {
-                  setGameState(state);
-                  setLastMove(null);
-                  setRestartRequested(false);
-                  gameStartTimeRef.current = Date.now();
-                });
-              } else if (netMsg.type === "restart_reject") {
-                setRestartRequested(false);
-              }
-              break;
-            }
-          }
-        } catch (e) {
-          console.error("[WS] Failed to parse message:", event.data, e);
-        }
-      };
+      ws.onmessage = createWsMessageHandler(role);
 
       ws.onclose = () => {
         console.log("[WS] Connection closed");
@@ -217,7 +254,7 @@ function App() {
       wsRef.current = ws;
       return ws;
     },
-    [closeWs]
+    [closeWs, createWsMessageHandler]
   );
 
   const sendWs = useCallback((msg: NetworkMessage) => {
@@ -266,6 +303,7 @@ function App() {
         setCurrentRoomId(roomId);
         setIsHost(false);
         connectWs(roomId, token, "client");
+        setMode("waiting");
       } catch (e) {
         alert(e instanceof Error ? e.message : "加入房间失败");
       }
@@ -283,15 +321,43 @@ function App() {
 
   // Reconnect
   const reconnectWs = useCallback(() => {
-    if (!currentRoomId || !token) return null;
-    try {
-      const ws = connectWs(currentRoomId, token, isHost ? "host" : "client");
-      setShowReconnect(false);
-      return ws;
-    } catch {
-      return null;
-    }
-  }, [currentRoomId, token, isHost, connectWs]);
+    if (!currentRoomId || !token) return Promise.reject("Missing room/token");
+
+    closeWs();
+
+    return new Promise<WebSocket>((resolve, reject) => {
+      try {
+        const wsUrl = getGameWsUrl(currentRoomId, token);
+        const ws = new WebSocket(wsUrl);
+
+        const timeoutId = setTimeout(() => {
+          reject("Reconnection timeout");
+          if (ws.readyState === WebSocket.CONNECTING) {
+            ws.close();
+          }
+        }, 5000);
+
+        ws.onopen = () => {
+          console.log("[WS] Reconnected successfully to", wsUrl);
+          clearTimeout(timeoutId);
+          setShowReconnect(false);
+          wsRef.current = ws;
+          resolve(ws);
+        };
+
+        ws.onmessage = createWsMessageHandler(null);
+
+        ws.onerror = (event) => {
+          console.error("[WS] Reconnection error", event);
+          clearTimeout(timeoutId);
+          reject("Connection failed");
+        };
+
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }, [currentRoomId, token, closeWs, createWsMessageHandler]);
 
   const handleReconnectTimeout = useCallback(() => {
     setShowReconnect(false);
@@ -315,6 +381,11 @@ function App() {
 
   const handlePlayAI = useCallback(() => {
     setMode("ai");
+    startNewGame();
+  }, [startNewGame]);
+
+  const handleLocalPlay = useCallback(() => {
+    setMode("local_pvp");
     startNewGame();
   }, [startNewGame]);
 
@@ -418,7 +489,7 @@ function App() {
   // ===== ROUTING =====
 
   if (mode === "menu") {
-    return <MainMenu onPlayAI={handlePlayAI} onOnlinePlay={handleOnlinePlay} />;
+    return <MainMenu onPlayAI={handlePlayAI} onLocalPlay={handleLocalPlay} onOnlinePlay={handleOnlinePlay} />;
   }
 
   if (mode === "login") {

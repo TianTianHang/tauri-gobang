@@ -41,6 +41,7 @@ export type Difficulty = "easy" | "medium" | "hard";
 export type GameMode =
   | "menu"
   | "ai"
+  | "local_pvp"
   | "online_host"
   | "online_client"
   | "login"
@@ -69,7 +70,7 @@ export interface NetworkMessage {
 }
 
 export interface ServerMessage {
-  type: "game_start" | "opponent_joined" | "opponent_disconnected" | "player_reconnected" | "game_ended";
+  type: "game_start" | "opponent_joined" | "opponent_disconnected" | "player_reconnected" | "game_ended" | "game_state_sync";
   black_player?: string;
   white_player?: string;
   username?: string;
@@ -77,6 +78,8 @@ export interface ServerMessage {
   timeout_seconds?: number;
   winner?: string;
   reason?: string;
+  moves?: { row: number; col: number }[];
+  current_player?: string;
 }
 
 export interface AuthResponse {
@@ -90,6 +93,8 @@ export interface RoomListEntry {
   name: string;
   host_username: string;
   created_at: number;
+  player_count?: number;
+  status?: string;
 }
 
 export interface CreateRoomResponse {

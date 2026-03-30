@@ -63,6 +63,9 @@ export async function joinRoom(token: string, roomId: string): Promise<JoinRoomR
 }
 
 export function getGameWsUrl(roomId: string, token: string): string {
+  // Using query parameter for WebSocket authentication (not Authorization header)
+  // because custom headers are not universally supported in WebSocket handshake.
+  // This is the standard approach for WebSocket authentication.
   return `${wsBaseUrl()}/game/${roomId}?token=${encodeURIComponent(token)}`;
 }
 

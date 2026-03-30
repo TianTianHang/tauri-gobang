@@ -23,6 +23,9 @@
   --status-disconnected: #EF4444;
   --modal-bg-glass: rgba(255, 255, 255, 0.85);
   --modal-victory-gradient: linear-gradient(135deg, #D4AF37 0%, #F59E0B 100%);
+  --room-available: #22C55E;
+  --room-full: #EF4444;
+  --room-waiting: #F59E0B;
 
   color: var(--text-primary);
   background-color: var(--bg-primary);

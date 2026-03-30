@@ -97,7 +97,11 @@ describe("RoomListEntry type", () => {
       name: "Test Room",
       host_username: "Alice",
       created_at: Date.now(),
+      player_count: 1,
+      status: "waiting",
     };
+    expect(entry.player_count).toBe(1);
+    expect(entry.status).toBe("waiting");
     expect(entry.id).toBeDefined();
     expect(entry.name).toBeDefined();
     expect(entry.host_username).toBeDefined();

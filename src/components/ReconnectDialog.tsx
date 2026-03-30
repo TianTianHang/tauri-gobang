@@ -7,7 +7,7 @@ interface ReconnectDialogProps {
   opponentName: string;
   onReconnectSuccess: () => void;
   onTimeout: () => void;
-  reconnectWs: () => WebSocket | null;
+  reconnectWs: () => Promise<WebSocket>;
 }
 
 function ReconnectDialog({
@@ -47,11 +47,14 @@ function ReconnectDialog({
       const newAttempt = Math.floor(elapsed / 5) + 1;
       if (newAttempt > attempt && newAttempt <= 6) {
         setAttempt(newAttempt);
-        const ws = reconnectWs();
-        if (ws) {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          onReconnectSuccess();
-        }
+        reconnectWs()
+          .then(() => {
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            onReconnectSuccess();
+          })
+          .catch((err) => {
+            console.error("Reconnect attempt failed:", err);
+          });
       }
     }, 1000);
 

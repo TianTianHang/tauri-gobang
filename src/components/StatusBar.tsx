@@ -47,11 +47,17 @@ function StatusBar({ gameState, aiThinking, mode, myColor, onMenuOpen, menuOpen,
 
 function getStatusContent(state: GameState, mode: GameMode, myColor?: Cell): React.ReactNode {
   const isOnline = mode === "online_host" || mode === "online_client";
+  const isLocalPvp = mode === "local_pvp";
 
   switch (state.status) {
     case GameStatus.Playing:
       if (isOnline && myColor) {
         return state.current_player === myColor ? "轮到你落子" : "等待对手落子...";
+      }
+      if (isLocalPvp) {
+        return state.current_player === Cell.Black
+          ? "⚫ 黑方回合"
+          : "⚪ 白方回合";
       }
       return state.current_player === Cell.Black
         ? <><BlackStoneIcon className="stone-icon" /> 黑棋落子</>

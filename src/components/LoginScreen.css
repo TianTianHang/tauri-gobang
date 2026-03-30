@@ -7,34 +7,230 @@
   margin: 16px;
 }
 
-.login-screen h2 {
-  margin: 0 0 20px;
+.login-brand {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.brand-icon {
+  width: 48px;
+  height: 48px;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.login-title {
+  margin: 0 0 6px;
   text-align: center;
   color: var(--text-primary);
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 700;
 }
 
-.toggle-mode-btn {
+.login-subtitle {
+  margin: 0 0 0;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 14px 16px;
+  padding-left: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 16px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-sizing: border-box;
+  outline: none;
+  transition: all 0.2s ease;
+  min-height: 48px;
+}
+
+.form-group input:focus {
+  border-color: var(--accent);
+  background: var(--bg-primary);
+}
+
+.form-group input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.setup-buttons {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.setup-buttons button {
+  flex: 1;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 50px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.input-group {
+  position: relative;
+}
+
+.input-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.input-group input {
+  padding-left: 40px;
+}
+
+.toggle-password {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-password:hover {
+  color: var(--text-primary);
+}
+
+.toggle-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--status-disconnected);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.error-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.toggle-mode-action {
   display: block;
   width: 100%;
   margin-top: 16px;
   padding: 12px;
-  background: none;
-  border: none;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
   color: var(--accent);
   font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
   text-align: center;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.toggle-mode-btn:hover {
-  text-decoration: underline;
+.toggle-mode-action:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent);
 }
 
-.toggle-mode-btn:disabled {
+.toggle-mode-action:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-secondary:hover {
+  background: var(--bg-secondary);
+  border-color: var(--text-secondary);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.confirm-password-field {
+  opacity: 1;
+  max-height: 120px;
+  transition: opacity 0.2s ease-in-out, max-height 0.2s ease-in-out;
+}
+
+.confirm-password-field.hidden {
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm-password-field,
+  .confirm-password-field.hidden {
+    transition: none;
+  }
 }
 
 @media (min-width: 768px) {
@@ -44,8 +240,7 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
   }
 
-  .login-screen h2 {
+  .login-title {
     font-size: 28px;
-    margin-bottom: 24px;
   }
 }
