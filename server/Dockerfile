@@ -27,6 +27,7 @@ RUN rm -rf src
 
 # Copy actual source code
 COPY server/src ./src/
+COPY server/migrations ./migrations/
 
 # Build the server
 RUN touch src/main.rs && cargo build --release
