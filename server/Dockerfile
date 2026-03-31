@@ -30,7 +30,9 @@ COPY server/src ./src/
 COPY server/migrations ./migrations/
 
 # Build the server
-RUN touch src/main.rs && cargo build --release
+RUN touch src/main.rs && cargo build --release && \
+    mv target/release/gobang-server . && \
+    rm -rf target/ src/
 
 # Runtime stage
 FROM ubuntu:20.04
@@ -41,7 +43,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy binary from builder
-COPY --from=builder /build/server/target/release/gobang-server /usr/local/bin/
+COPY --from=builder /build/server/gobang-server /usr/local/bin/
 
 # Set working directory
 WORKDIR /app
