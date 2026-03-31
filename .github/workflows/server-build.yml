@@ -1,4 +1,4 @@
-name: Server Build (Ubuntu 20.04)
+name: Server Build (Ubuntu 22.04)
 
 on:
   push:
@@ -20,7 +20,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout 代码
@@ -40,72 +40,73 @@ jobs:
           COMMIT_HASH=$(git rev-parse --short=7 HEAD)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
-          echo "artifact_name=gobang-server-ubuntu20.04-v${VERSION}-${COMMIT_HASH}" >> $GITHUB_OUTPUT
+          echo "artifact_name=gobang-server-ubuntu22.04-v${VERSION}-${COMMIT_HASH}" >> $GITHUB_OUTPUT
 
           echo "📦 Version: $VERSION"
           echo "🔖 Commit: $COMMIT_HASH"
 
-      - name: 安装 Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: 缓存 Cargo 依赖
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            server/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('server/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
-      - name: 编译 server
+      - name: 构建并提取二进制
         run: |
           cd server
-          cargo build --release
-          strip target/release/gobang-server || true
+          docker buildx build \
+            --build-arg DEBIAN_FRONTEND=noninteractive \
+            --output type=local,dest=./artifacts/build \
+            --target builder \
+            .
+
+          mkdir -p artifacts/target/release
+          cp artifacts/build/build/server/target/release/gobang-server artifacts/target/release/
+          strip artifacts/target/release/gobang-server || true
 
       - name: 验证二进制
         run: |
           cd server
           echo "📋 Binary info:"
-          file target/release/gobang-server
-          ls -lh target/release/gobang-server
+          file artifacts/target/release/gobang-server
+          ls -lh artifacts/target/release/gobang-server
           echo ""
           echo "🧪 Test basic functionality:"
-          ./target/release/gobang-server --version || ./target/release/gobang-server --help || true
+          docker run --rm -v "$(pwd)/artifacts/target/release:/app" ubuntu:20.04 /app/gobang-server --version || \
+          docker run --rm -v "$(pwd)/artifacts/target/release:/app" ubuntu:20.04 /app/gobang-server --help || true
           echo ""
           echo "📦 Check dependencies:"
-          ldd target/release/gobang-server | head -5 || true
+          docker run --rm -v "$(pwd)/artifacts/target/release:/app" ubuntu:20.04 ldd /app/gobang-server | head -5 || true
 
       - name: 创建构建信息文件
         run: |
           cd server
-          cat > target/release/BUILD_INFO.txt << 'EOF'
+          cat > artifacts/target/release/BUILD_INFO.txt << 'EOF'
           Gobang Server Build Information
           ================================
           Version: ${{ steps.version.outputs.version }}
           Commit: ${{ steps.version.outputs.commit_hash }}
           Build Date:
-          Runner OS: Ubuntu 20.04
+          Runner OS: Ubuntu 20.04 (in Docker)
+          Build Method: Docker
           Rust Version:
           Cargo Version:
           Git Branch: ${{ github.ref_name }}
           GitHub Run: ${{ github.run_number }}
           EOF
 
-          sed -i "s/Build Date:/Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")/" target/release/BUILD_INFO.txt
-          sed -i "s/Rust Version:/Rust Version: $(rustc --version)/" target/release/BUILD_INFO.txt
-          sed -i "s/Cargo Version:/Cargo Version: $(cargo --version)/" target/release/BUILD_INFO.txt
+          sed -i "s/Build Date:/Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")/" artifacts/target/release/BUILD_INFO.txt
+          RUST_VERSION="via Docker (stable)"
+          sed -i "s/Rust Version:/Rust Version: $RUST_VERSION/" artifacts/target/release/BUILD_INFO.txt
+          CARGO_VERSION="via Docker"
+          sed -i "s/Cargo Version:/Cargo Version: $CARGO_VERSION/" artifacts/target/release/BUILD_INFO.txt
 
-          cat target/release/BUILD_INFO.txt
+          cat artifacts/target/release/BUILD_INFO.txt
 
       - name: 打包产物
         run: |
           cd server
           ARTIFACT_NAME="${{ steps.version.outputs.artifact_name }}"
           mkdir -p "artifacts/$ARTIFACT_NAME"
-          cp target/release/gobang-server "artifacts/$ARTIFACT_NAME/"
-          cp target/release/BUILD_INFO.txt "artifacts/$ARTIFACT_NAME/"
+          cp artifacts/target/release/gobang-server "artifacts/$ARTIFACT_NAME/"
+          cp artifacts/target/release/BUILD_INFO.txt "artifacts/$ARTIFACT_NAME/"
 
           cd artifacts
           tar czf "${ARTIFACT_NAME}.tar.gz" "$ARTIFACT_NAME"
@@ -131,6 +132,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`${{ steps.version.outputs.commit_hash }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Compatibility:** Ubuntu 16.04+" >> $GITHUB_STEP_SUMMARY
+          echo "**Compatibility:** Ubuntu 20.04+ (glibc 2.31)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Method:** Docker" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "📥 Download from Artifacts below" >> $GITHUB_STEP_SUMMARY
