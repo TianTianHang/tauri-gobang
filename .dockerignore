@@ -13,6 +13,7 @@ result
 .direnv/
 
 # Other directories
+.git/
 node_modules/
 src-tauri/
 src/
