@@ -80,3 +80,7 @@ src-tauri/android/keystore.properties
 .claude
 
 logs
+# Android signing keystore
+android/*.keystore
+android/*.jks
+server/build/

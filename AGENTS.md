@@ -31,6 +31,11 @@ cargo run -- --daemon             # Background mode (Unix only)
 cargo test                        # Run all tests (unit + integration)
 cargo build --release             # Build production binary
 ./build.sh                        # Cross-platform build script
+
+# Development vs Production builds
+cargo build --release             # Development build (dynamic glibc)
+./build.sh production             # Production build (static musl, portable)
+./build.sh both                   # Build both versions
 ```
 
 ## Nix开发环境 (推荐)

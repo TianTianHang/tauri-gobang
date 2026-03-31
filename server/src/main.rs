@@ -112,6 +112,7 @@ password_min_length = 6
     let app = Router::new()
         .route("/api/register", post(register))
         .route("/api/login", post(login))
+        .route("/api/logout", post(logout))
         .route("/api/rooms", get(list_rooms).post(create_room))
         .route("/api/rooms/{room_id}/join", post(join_room))
         .route("/game/{room_id}", get(ws::ws_handler))
@@ -241,6 +242,31 @@ fn extract_token(headers: &axum::http::HeaderMap, query: &std::collections::Hash
     query.get("token").cloned()
 }
 
+async fn logout(
+    State(state): State<ws::AppState>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let token = match extract_token(&headers, &params) {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "缺少认证令牌"})),
+            );
+        }
+    };
+
+    auth::remove_session(&state.sessions, &token).await;
+
+    tracing::info!(token_hash = &token[..8.min(token.len())], "user logged out");
+
+    (
+        StatusCode::OK,
+        Json(json!({"message": "登出成功"})),
+    )
+}
+
 async fn register(
     State(state): State<ws::AppState>,
     Json(req): Json<RegisterRequest>,
@@ -266,10 +292,10 @@ async fn register(
     match existing {
         Ok(Some(_)) => {
             tracing::warn!(username = %username, "registration failed: username already exists");
-            (
+            return (
                 StatusCode::CONFLICT,
                 Json(json!({"error": "用户名已存在"})),
-            )
+            );
         }
         Ok(None) => {
             let user_id = auth::generate_id();
@@ -297,21 +323,22 @@ async fn register(
 
             tracing::info!(user_id = %user_id, username = %username, "user registered successfully");
 
-            (
+            let response = AuthResponse {
+                token,
+                user_id,
+                username,
+            };
+            return (
                 StatusCode::CREATED,
-                Json(json!({
-                    "token": token,
-                    "user_id": user_id,
-                    "username": username,
-                })),
-            )
+                Json(serde_json::to_value(response).unwrap()),
+            );
         }
         Err(e) => {
             tracing::error!(error = %e, "registration failed: database error");
-            (
+            return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": format!("数据库错误: {}", e)})),
-            )
+            );
         }
     }
 }
@@ -329,13 +356,14 @@ async fn login(
 
                     tracing::info!(user_id = %user.id, username = %user.username, "user logged in successfully");
 
+                    let response = AuthResponse {
+                        token,
+                        user_id: user.id,
+                        username: user.username,
+                    };
                     (
                         StatusCode::OK,
-                        Json(json!({
-                            "token": token,
-                            "user_id": user.id,
-                            "username": user.username,
-                        })),
+                        Json(serde_json::to_value(response).unwrap()),
                     )
                 }
                 Ok(false) => {

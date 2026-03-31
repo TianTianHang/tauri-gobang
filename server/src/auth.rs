@@ -1,17 +1,31 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 pub type Sessions = Arc<RwLock<HashMap<String, String>>>;
 
 pub async fn hash_password(password: &str) -> Result<String, String> {
-    bcrypt::hash(password, 12).map_err(|e| format!("password hashing failed: {}", e))
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    argon2
+        .hash_password(password.as_bytes(), &salt)
+        .map(|hash| hash.to_string())
+        .map_err(|e| format!("password hashing failed: {}", e))
 }
 
 pub async fn verify_password(password: &str, hash: &str) -> Result<bool, String> {
-    bcrypt::verify(password, hash).map_err(|e| format!("password verification failed: {}", e))
+    let parsed_hash = PasswordHash::new(hash)
+        .map_err(|e| format!("password hash parsing failed: {}", e))?;
+    match Argon2::default().verify_password(password.as_bytes(), &parsed_hash) {
+        Ok(()) => Ok(true),
+        Err(_) => Ok(false),
+    }
 }
 
 pub fn generate_token() -> String {

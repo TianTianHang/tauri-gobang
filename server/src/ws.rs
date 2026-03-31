@@ -397,6 +397,7 @@ async fn handle_disconnect(state: &AppState, room_id: String, user_id: String) {
             let end_json = serde_json::to_string(&end_msg).unwrap();
             room.broadcast(&end_json).await;
         }
+        room.status = RoomStatus::Ended;
         if let Err(e) = db::update_room_status(&state.db, &room_id, "ended").await {
             tracing::error!(error = %e, "failed to update room status");
         }
@@ -473,6 +474,7 @@ async fn handle_disconnect(state: &AppState, room_id: String, user_id: String) {
         let end_json = serde_json::to_string(&end_msg).unwrap();
         room.broadcast(&end_json).await;
 
+        room.status = RoomStatus::Ended;
         if let Err(e) = db::update_room_status(&state_clone.db, &room_id_clone, "ended").await {
             tracing::error!(error = %e, "failed to update room status");
         }
