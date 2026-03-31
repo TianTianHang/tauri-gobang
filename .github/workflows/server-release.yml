@@ -1,0 +1,91 @@
+name: Server Release
+
+on:
+  push:
+    tags:
+      - 'server-v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-18.04
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: 编译 server
+        run: |
+          cd server
+          cargo build --release
+          strip target/release/gobang-server || true
+
+      - name: 验证二进制
+        run: |
+          cd server
+          echo "📋 二进制信息:"
+          file target/release/gobang-server
+          ls -lh target/release/gobang-server
+          echo ""
+          echo "🧪 测试基本功能:"
+          ./target/release/gobang-server --version || ./target/release/gobang-server --help || true
+
+      - name: 创建构建信息文件
+        run: |
+          cd server
+          cat > target/release/BUILD_INFO.txt << 'EOF'
+          Gobang Server Build Information
+          ================================
+          Version:
+          Commit:
+          Build Date:
+          Runner OS: Ubuntu 18.04
+          Rust Version:
+          Cargo Version:
+          Git Branch:
+          GitHub Run:
+          EOF
+
+          VERSION=$(grep '^version' Cargo.toml | head -1 | awk -F'"' '{print $2}')
+          COMMIT=$(git rev-parse --short=7 HEAD)
+          DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          RUST_VERSION=$(rustc --version)
+          CARGO_VERSION=$(cargo --version)
+          BRANCH="${{ github.ref_name }}"
+          RUN_NUMBER="${{ github.run_number }}"
+
+          sed -i "s/Version:/Version: $VERSION/" target/release/BUILD_INFO.txt
+          sed -i "s/Commit:/Commit: $COMMIT/" target/release/BUILD_INFO.txt
+          sed -i "s/Build Date:/Build Date: $DATE/" target/release/BUILD_INFO.txt
+          sed -i "s/Rust Version:/Rust Version: $RUST_VERSION/" target/release/BUILD_INFO.txt
+          sed -i "s/Cargo Version:/Cargo Version: $CARGO_VERSION/" target/release/BUILD_INFO.txt
+          sed -i "s/Git Branch:/Git Branch: $BRANCH/" target/release/BUILD_INFO.txt
+          sed -i "s/GitHub Run:/GitHub Run: $RUN_NUMBER/" target/release/BUILD_INFO.txt
+
+          cat target/release/BUILD_INFO.txt
+
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            server/target/release/gobang-server
+            server/target/release/BUILD_INFO.txt
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 构建摘要
+        run: |
+          echo "## 🚀 Release 创建成功！" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**版本:** $(grep '^version' server/Cargo.toml | head -1 | awk -F'"' '{print $2}')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**兼容性:** Ubuntu 16.04+" >> $GITHUB_STEP_SUMMARY

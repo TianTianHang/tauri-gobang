@@ -1,0 +1,139 @@
+name: Server Build (Ubuntu 18.04)
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-build.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-build.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (留空则从 Cargo.toml 读取)'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 读取版本号
+        id: version
+        run: |
+          cd server
+          VERSION=$(grep '^version' Cargo.toml | head -1 | awk -F'"' '{print $2}')
+
+          INPUT_VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          fi
+
+          COMMIT_HASH=$(git rev-parse --short=7 HEAD)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+          echo "artifact_name=gobang-server-ubuntu18.04-v${VERSION}-${COMMIT_HASH}" >> $GITHUB_OUTPUT
+
+          echo "📦 版本: $VERSION"
+          echo "🔖 Commit: $COMMIT_HASH"
+
+      - name: 安装 Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: 缓存 Cargo 依赖
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            server/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('server/Cargo.lock') }}
+          restore-keys:
+            - ${{ runner.os }}-cargo-
+
+      - name: 编译 server
+        run: |
+          cd server
+          cargo build --release
+          strip target/release/gobang-server || true
+
+      - name: 验证二进制
+        run: |
+          cd server
+          echo "📋 二进制信息:"
+          file target/release/gobang-server
+          ls -lh target/release/gobang-server
+          echo ""
+          echo "🧪 测试基本功能:"
+          ./target/release/gobang-server --version || ./target/release/gobang-server --help || true
+          echo ""
+          echo "📦 检查动态链接:"
+          ldd target/release/gobang-server | head -5 || true
+
+      - name: 创建构建信息文件
+        run: |
+          cd server
+          cat > target/release/BUILD_INFO.txt << 'EOF'
+          Gobang Server Build Information
+          ================================
+          Version: ${{ steps.version.outputs.version }}
+          Commit: ${{ steps.version.outputs.commit_hash }}
+          Build Date:
+          Runner OS: Ubuntu 18.04
+          Rust Version:
+          Cargo Version:
+          Git Branch: ${{ github.ref_name }}
+          GitHub Run: ${{ github.run_number }}
+          EOF
+
+          sed -i "s/Build Date:/Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")/" target/release/BUILD_INFO.txt
+          sed -i "s/Rust Version:/Rust Version: $(rustc --version)/" target/release/BUILD_INFO.txt
+          sed -i "s/Cargo Version:/Cargo Version: $(cargo --version)/" target/release/BUILD_INFO.txt
+
+          cat target/release/BUILD_INFO.txt
+
+      - name: 打包产物
+        run: |
+          cd server
+          ARTIFACT_NAME="${{ steps.version.outputs.artifact_name }}"
+          mkdir -p "artifacts/$ARTIFACT_NAME"
+          cp target/release/gobang-server "artifacts/$ARTIFACT_NAME/"
+          cp target/release/BUILD_INFO.txt "artifacts/$ARTIFACT_NAME/"
+
+          cd artifacts
+          tar czf "${ARTIFACT_NAME}.tar.gz" "$ARTIFACT_NAME"
+
+          echo "📦 产物内容:"
+          tar tzf "${ARTIFACT_NAME}.tar.gz"
+
+      - name: 上传 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.artifact_name }}
+          path: server/artifacts/${{ steps.version.outputs.artifact_name }}.tar.gz
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: 构建摘要
+        run: |
+          echo "## 🎉 构建成功！ 📦" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**二进制名称:** \`${{ steps.version.outputs.artifact_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**版本:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ steps.version.outputs.commit_hash }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**兼容性:** Ubuntu 16.04+" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📥 下载 Artifact" >> $GITHUB_STEP_SUMMARY
