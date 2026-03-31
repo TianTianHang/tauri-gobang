@@ -1,0 +1,19 @@
+# Server build artifacts
+server/target/
+server/artifacts/
+
+# IDE and editor files
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Nix files
+result
+.direnv/
+
+# Other directories
+node_modules/
+src-tauri/
+src/
+.github/
