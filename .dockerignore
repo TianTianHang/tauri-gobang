@@ -18,3 +18,4 @@ node_modules/
 src-tauri/
 src/
 .github/
+third-party/
