@@ -16,13 +16,20 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Set working directory
-WORKDIR /build
+WORKDIR /build/server
 
-# Copy server source
-COPY server/ ./server/
+# Copy dependency manifests first (for layer caching)
+COPY server/Cargo.toml server/Cargo.lock ./
+
+# Create dummy source to cache dependencies
+RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release 2>/dev/null || true
+RUN rm -rf src
+
+# Copy actual source code
+COPY server/src ./src/
 
 # Build the server
-RUN cd server && cargo build --release
+RUN touch src/main.rs && cargo build --release
 
 # Runtime stage
 FROM ubuntu:20.04
