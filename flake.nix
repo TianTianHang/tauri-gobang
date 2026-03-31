@@ -17,15 +17,6 @@
           config.android_sdk.accept_license = true;
         };
 
-        pkgsMusl = import nixpkgs {
-          inherit system overlays;
-          config.allowUnfree = true;
-          config.android_sdk.accept_license = true;
-          crossSystem = {
-            config = "x86_64-unknown-linux-musl";
-          };
-        };
-
         androidComposition = pkgs.androidenv.composeAndroidPackages {
           platformVersions = [ "35" "36" ];
           includeNDK = true;
@@ -42,7 +33,6 @@
           targets = [
             "aarch64-linux-android"
             "x86_64-linux-android"
-            "x86_64-unknown-linux-musl"
           ];
         };
 
@@ -57,38 +47,6 @@
 
         packages.default = self.packages.${system}.emulator;
 
-        devShells.musl = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            rustToolchain
-            rustup
-            pkg-config
-            python3
-            sqlite
-            gcc
-          ];
-
-          shellHook = ''
-            export PKG_CONFIG_PATH="${pkgs.sqlite.dev}/lib/pkgconfig:$PKG_CONFIG_PATH"
-            export PKG_CONFIG_ALL_STATIC=1
-            export PKG_CONFIG_ALL_DYNAMIC=0
-            export MUSL_STATIC=1
-            
-            # Disable FORTIFY_SOURCE for static linking with musl
-            export CFLAGS="-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0"
-            export CC="${pkgs.gcc}/bin/gcc"
-
-            echo "🦄 Musl静态编译环境"
-            echo "━━━━━━━━━━━━━━━━━━━━━━"
-            echo "Rust: $(rustc --version)"
-            echo "GCC: $(gcc --version | head -n1)"
-            echo ""
-            echo "编译server (静态链接):"
-            echo "  cd server"
-            echo "  cargo build --release --target x86_64-unknown-linux-musl"
-            echo ""
-          '';
-        };
-
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             nodejs_24
@@ -100,13 +58,12 @@
             gradle
             jdk17
             pkg-config
+            sqlite
             gtk3
             gdk-pixbuf
             webkitgtk_4_1
             libsoup_3
             python3
-            musl
-            musl.dev
           ];
 
           shellHook = ''
@@ -146,12 +103,8 @@
             echo "✨ 环境已就绪！运行: pnpm tauri android dev"
             echo ""
             echo "📦 Server Build:"
-            echo "   ./build.sh production   - 静态链接（生产）"
-            echo "   ./build.sh development  - 动态链接（开发）"
-            echo "   ./build.sh both         - 构建两个版本"
+            echo "   ./build.sh"
             echo ""
-            echo "🦄 Musl环境:"
-            echo "   nix develop .#musl      - 进入musl静态编译环境"
           '';
         };
       }
