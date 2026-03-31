@@ -32,7 +32,9 @@ COPY server/migrations ./migrations/
 # Build the server
 RUN touch src/main.rs && cargo build --release && \
     mv target/release/gobang-server . && \
-    rm -rf target/ src/
+    rm -rf target/ src/ \
+    /root/.cargo /root/.rustup \
+    /var/lib/apt/lists/*
 
 # Runtime stage
 FROM ubuntu:20.04
