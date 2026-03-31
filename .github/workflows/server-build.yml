@@ -42,13 +42,11 @@ jobs:
           echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
           echo "artifact_name=gobang-server-ubuntu18.04-v${VERSION}-${COMMIT_HASH}" >> $GITHUB_OUTPUT
 
-          echo "📦 版本: $VERSION"
+          echo "📦 Version: $VERSION"
           echo "🔖 Commit: $COMMIT_HASH"
 
       - name: 安装 Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: 缓存 Cargo 依赖
         uses: actions/cache@v4
@@ -70,14 +68,14 @@ jobs:
       - name: 验证二进制
         run: |
           cd server
-          echo "📋 二进制信息:"
+          echo "📋 Binary info:"
           file target/release/gobang-server
           ls -lh target/release/gobang-server
           echo ""
-          echo "🧪 测试基本功能:"
+          echo "🧪 Test basic functionality:"
           ./target/release/gobang-server --version || ./target/release/gobang-server --help || true
           echo ""
-          echo "📦 检查动态链接:"
+          echo "📦 Check dependencies:"
           ldd target/release/gobang-server | head -5 || true
 
       - name: 创建构建信息文件
@@ -113,7 +111,7 @@ jobs:
           cd artifacts
           tar czf "${ARTIFACT_NAME}.tar.gz" "$ARTIFACT_NAME"
 
-          echo "📦 产物内容:"
+          echo "📦 Artifact contents:"
           tar tzf "${ARTIFACT_NAME}.tar.gz"
 
       - name: 上传 Artifact
@@ -128,12 +126,12 @@ jobs:
         run: |
           echo "## 🎉 构建成功！ 📦" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**二进制名称:** \`${{ steps.version.outputs.artifact_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Binary Name:** \`${{ steps.version.outputs.artifact_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**版本:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`${{ steps.version.outputs.commit_hash }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**兼容性:** Ubuntu 16.04+" >> $GITHUB_STEP_SUMMARY
+          echo "**Compatibility:** Ubuntu 16.04+" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📥 下载 Artifact" >> $GITHUB_STEP_SUMMARY
+          echo "📥 Download from Artifacts below" >> $GITHUB_STEP_SUMMARY
