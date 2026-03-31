@@ -1,9 +1,9 @@
 import type { AuthResponse, RoomListEntry, CreateRoomResponse, JoinRoomResponse } from "./types/game";
 
-const DEFAULT_SERVER_URL = "http://localhost:3001";
+const DEFAULT_SERVER_URL = import.meta.env.VITE_DEFAULT_SERVER_URL || "http://localhost:3001";
 
 function getServerUrl(): string {
-  return localStorage.getItem("gobang_server_url") || DEFAULT_SERVER_URL;
+  return DEFAULT_SERVER_URL || localStorage.getItem("gobang_server_url") ;
 }
 
 function wsBaseUrl(): string {
