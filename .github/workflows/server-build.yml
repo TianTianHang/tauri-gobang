@@ -56,8 +56,7 @@ jobs:
             ~/.cargo/git
             server/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('server/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          restore-keys: ${{ runner.os }}-cargo-
 
       - name: 编译 server
         run: |
