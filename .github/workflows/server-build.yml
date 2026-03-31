@@ -52,13 +52,15 @@ jobs:
           docker buildx build \
             --build-arg DEBIAN_FRONTEND=noninteractive \
             -f server/Dockerfile \
-            --output type=local,dest=./server/build-output \
+            --load \
+            -t gobang-server:build \
             .
 
           mkdir -p server/artifacts/target/release
-          cp server/build-output/usr/local/bin/gobang-server server/artifacts/target/release/
+          docker create --name gobang-extract gobang-server:build
+          docker cp gobang-extract:/usr/local/bin/gobang-server server/artifacts/target/release/
+          docker rm gobang-extract
           strip server/artifacts/target/release/gobang-server || true
-          rm -rf server/build-output
 
       - name: 验证二进制
         run: |
