@@ -29,8 +29,7 @@ jobs:
       - name: 读取版本号
         id: version
         run: |
-          cd server
-          VERSION=$(grep '^version' Cargo.toml | head -1 | awk -F'"' '{print $2}')
+          VERSION=$(grep '^version' server/Cargo.toml | head -1 | awk -F'"' '{print $2}')
 
           INPUT_VERSION="${{ github.event.inputs.version }}"
           if [ -n "$INPUT_VERSION" ]; then
@@ -50,35 +49,34 @@ jobs:
 
       - name: 构建并提取二进制
         run: |
-          cd server
           docker buildx build \
             --build-arg DEBIAN_FRONTEND=noninteractive \
-            --output type=local,dest=./artifacts/build \
+            -f server/Dockerfile \
+            --output type=local,dest=./server/build-output \
             --target builder \
             .
 
-          mkdir -p artifacts/target/release
-          cp artifacts/build/build/server/target/release/gobang-server artifacts/target/release/
-          strip artifacts/target/release/gobang-server || true
+          mkdir -p server/artifacts/target/release
+          cp server/build-output/build/server/target/release/gobang-server server/artifacts/target/release/
+          strip server/artifacts/target/release/gobang-server || true
+          rm -rf server/build-output
 
       - name: 验证二进制
         run: |
-          cd server
           echo "📋 Binary info:"
-          file artifacts/target/release/gobang-server
-          ls -lh artifacts/target/release/gobang-server
+          file server/artifacts/target/release/gobang-server
+          ls -lh server/artifacts/target/release/gobang-server
           echo ""
           echo "🧪 Test basic functionality:"
-          docker run --rm -v "$(pwd)/artifacts/target/release:/app" ubuntu:20.04 /app/gobang-server --version || \
-          docker run --rm -v "$(pwd)/artifacts/target/release:/app" ubuntu:20.04 /app/gobang-server --help || true
+          docker run --rm -v "$(pwd)/server/artifacts/target/release:/app" ubuntu:20.04 /app/gobang-server --version || \
+          docker run --rm -v "$(pwd)/server/artifacts/target/release:/app" ubuntu:20.04 /app/gobang-server --help || true
           echo ""
           echo "📦 Check dependencies:"
-          docker run --rm -v "$(pwd)/artifacts/target/release:/app" ubuntu:20.04 ldd /app/gobang-server | head -5 || true
+          docker run --rm -v "$(pwd)/server/artifacts/target/release:/app" ubuntu:20.04 ldd /app/gobang-server | head -5 || true
 
       - name: 创建构建信息文件
         run: |
-          cd server
-          cat > artifacts/target/release/BUILD_INFO.txt << 'EOF'
+          cat > server/artifacts/target/release/BUILD_INFO.txt << 'EOF'
           Gobang Server Build Information
           ================================
           Version: ${{ steps.version.outputs.version }}
@@ -92,23 +90,22 @@ jobs:
           GitHub Run: ${{ github.run_number }}
           EOF
 
-          sed -i "s/Build Date:/Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")/" artifacts/target/release/BUILD_INFO.txt
+          sed -i "s/Build Date:/Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")/" server/artifacts/target/release/BUILD_INFO.txt
           RUST_VERSION="via Docker (stable)"
-          sed -i "s/Rust Version:/Rust Version: $RUST_VERSION/" artifacts/target/release/BUILD_INFO.txt
+          sed -i "s/Rust Version:/Rust Version: $RUST_VERSION/" server/artifacts/target/release/BUILD_INFO.txt
           CARGO_VERSION="via Docker"
-          sed -i "s/Cargo Version:/Cargo Version: $CARGO_VERSION/" artifacts/target/release/BUILD_INFO.txt
+          sed -i "s/Cargo Version:/Cargo Version: $CARGO_VERSION/" server/artifacts/target/release/BUILD_INFO.txt
 
-          cat artifacts/target/release/BUILD_INFO.txt
+          cat server/artifacts/target/release/BUILD_INFO.txt
 
       - name: 打包产物
         run: |
-          cd server
           ARTIFACT_NAME="${{ steps.version.outputs.artifact_name }}"
-          mkdir -p "artifacts/$ARTIFACT_NAME"
-          cp artifacts/target/release/gobang-server "artifacts/$ARTIFACT_NAME/"
-          cp artifacts/target/release/BUILD_INFO.txt "artifacts/$ARTIFACT_NAME/"
+          mkdir -p "server/artifacts/$ARTIFACT_NAME"
+          cp server/artifacts/target/release/gobang-server "server/artifacts/$ARTIFACT_NAME/"
+          cp server/artifacts/target/release/BUILD_INFO.txt "server/artifacts/$ARTIFACT_NAME/"
 
-          cd artifacts
+          cd server/artifacts
           tar czf "${ARTIFACT_NAME}.tar.gz" "$ARTIFACT_NAME"
 
           echo "📦 Artifact contents:"

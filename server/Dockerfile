@@ -19,14 +19,14 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 WORKDIR /build/server
 
 # Copy dependency manifests first (for layer caching)
-COPY Cargo.toml Cargo.lock ./
+COPY server/Cargo.toml server/Cargo.lock ./
 
 # Create dummy source to cache dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release 2>/dev/null || true
 RUN rm -rf src
 
 # Copy actual source code
-COPY src ./src/
+COPY server/src ./src/
 
 # Build the server
 RUN touch src/main.rs && cargo build --release
