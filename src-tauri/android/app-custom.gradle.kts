@@ -9,6 +9,7 @@ import com.android.build.api.dsl.ApplicationExtension
 import com.android.build.gradle.internal.tasks.factory.dependsOn
 import java.io.FileInputStream
 import java.util.Properties
+import kotlin.text.RegexOption
 
 // === Signing Configuration ===
 val keystorePropertiesFile = file("../../../android/keystore.properties")
@@ -129,8 +130,64 @@ tasks.register("copyRapfiBinaries") {
     }
 }
 
+// === Network Security Config Task ===
+// Copy network_security_config.xml to Android resources
+// This config restricts cleartext HTTP to specific domains (server IP, localhost, emulator)
+tasks.register("copyNetworkSecurityConfig") {
+    description = "Copy network_security_config.xml to Android resources"
+    group = "build"
+
+    doLast {
+        val sourceFile = file("../../../android/res/xml/network_security_config.xml")
+        if (sourceFile.exists()) {
+            val targetDir = file("src/main/res/xml")
+            val targetFile = file("$targetDir/network_security_config.xml")
+            targetDir.mkdirs()
+            copy {
+                from(sourceFile)
+                into(targetDir)
+            }
+            println("✅ Copied network_security_config.xml")
+        } else {
+            println("⚠️  Warning: network_security_config.xml not found at $sourceFile")
+        }
+    }
+}
+
+// === Patch AndroidManifest Task ===
+// Add android:networkSecurityConfig attribute to <application> tag
+tasks.register("patchAndroidManifest") {
+    description = "Patch AndroidManifest.xml to reference network_security_config"
+    group = "build"
+
+    dependsOn("copyNetworkSecurityConfig")
+
+    doLast {
+        val manifestFile = file("src/main/AndroidManifest.xml")
+        if (!manifestFile.exists()) {
+            println("⚠️  Warning: AndroidManifest.xml not found at $manifestFile")
+            return@doLast
+        }
+
+        val content = manifestFile.readText()
+
+        if (content.contains("android:networkSecurityConfig")) {
+            println("⏭️  Skipped: AndroidManifest.xml already has networkSecurityConfig")
+            return@doLast
+        }
+
+        val updated = content.replace(
+            Regex("""(<application\b.*?)>""", RegexOption.DOT_MATCHES_ALL),
+            """$1 android:networkSecurityConfig="@xml/network_security_config">"""
+        )
+
+        manifestFile.writeText(updated)
+        println("✅ Patched AndroidManifest.xml with networkSecurityConfig")
+    }
+}
+
 // === preBuild Dependency Hook ===
 // Ensure rapfi binaries are copied before compilation starts
 tasks.named("preBuild") {
-    dependsOn("copyRapfiBinaries")
+    dependsOn("copyRapfiBinaries", "patchAndroidManifest")
 }
