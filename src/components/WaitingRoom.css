@@ -54,6 +54,29 @@
   cursor: pointer;
 }
 
+.btn-cancel {
+  width: 100%;
+  padding: 12px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 48px;
+}
+
+.btn-cancel:hover {
+  background: var(--bg-primary);
+  border-color: var(--accent);
+}
+
+.btn-cancel:active {
+  transform: scale(0.98);
+}
+
 .waiting-animation {
   margin: 32px 0;
 }

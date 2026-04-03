@@ -52,6 +52,34 @@ struct Cli {
     daemon: bool,
 }
 
+async fn cleanup_orphaned_rooms(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let cutoff_seconds: i64 = 3600;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)?
+        .as_secs() as i64;
+    let cutoff_timestamp = now - cutoff_seconds;
+
+    let result = sqlx::query(
+        "UPDATE rooms SET status = 'ended', ended_at = ? WHERE status = 'waiting' AND created_at < ?"
+    )
+    .bind(now)
+    .bind(cutoff_timestamp)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() > 0 {
+        tracing::info!(
+            cleaned_count = result.rows_affected(),
+            cutoff_hours = cutoff_seconds / 3600,
+            "cleaned up orphaned waiting rooms from previous server runs"
+        );
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -78,6 +106,10 @@ async fn main() -> anyhow::Result<()> {
     let pool = db::create_pool(&db_path).await?;
     db::init_database(&pool).await?;
     println!("\x1b[32m\u{2713}\x1b[0m 数据库已连接: {}", db_path);
+
+    if let Err(e) = cleanup_orphaned_rooms(&pool).await {
+        tracing::warn!("Failed to cleanup orphaned rooms: {}", e);
+    }
 
     let config_path = data_dir.join("config.toml");
     if !config_path.exists() {
@@ -845,5 +877,137 @@ mod tests {
             .unwrap();
         let res = app.oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_orphan_room_cleanup() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let pool = db::create_pool(":memory:").await.unwrap();
+        db::init_database(&pool).await.unwrap();
+
+        sqlx::query("INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)")
+            .bind("user-1")
+            .bind("alice")
+            .bind("fakehash")
+            .bind(1000)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query("INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)")
+            .bind("user-2")
+            .bind("bob")
+            .bind("fakehash")
+            .bind(1000)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let stale_timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64 - 7200;
+
+        sqlx::query("INSERT INTO rooms (id, name, host_id, status, created_at) VALUES (?, ?, ?, 'waiting', ?)")
+            .bind("stale-room-1")
+            .bind("Stale Room 1")
+            .bind("user-1")
+            .bind(stale_timestamp)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query("INSERT INTO rooms (id, name, host_id, status, created_at) VALUES (?, ?, ?, 'waiting', ?)")
+            .bind("stale-room-2")
+            .bind("Stale Room 2")
+            .bind("user-1")
+            .bind(stale_timestamp)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query("INSERT INTO rooms (id, name, host_id, status, created_at) VALUES (?, ?, ?, 'waiting', ?)")
+            .bind("recent-room-1")
+            .bind("Recent Room 1")
+            .bind("user-2")
+            .bind(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        cleanup_orphaned_rooms(&pool).await.unwrap();
+
+        let stale1: Option<(String,)> = sqlx::query_as("SELECT status FROM rooms WHERE id = 'stale-room-1'")
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stale1.unwrap().0, "ended");
+
+        let stale2: Option<(String,)> = sqlx::query_as("SELECT status FROM rooms WHERE id = 'stale-room-2'")
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stale2.unwrap().0, "ended");
+
+        let recent: Option<(String,)> = sqlx::query_as("SELECT status FROM rooms WHERE id = 'recent-room-1'")
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+        assert_eq!(recent.unwrap().0, "waiting");
+    }
+
+    #[tokio::test]
+    async fn test_waiting_room_exit_updates_db() {
+        let pool = db::create_pool(":memory:").await.unwrap();
+        db::init_database(&pool).await.unwrap();
+
+        let sessions: Sessions = Arc::new(RwLock::new(std::collections::HashMap::new()));
+        let rooms: RoomMap = Arc::new(RwLock::new(std::collections::HashMap::new()));
+
+        sqlx::query("INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)")
+            .bind("user-1")
+            .bind("alice")
+            .bind("fakehash")
+            .bind(1000)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query("INSERT INTO rooms (id, name, host_id, status, created_at) VALUES (?, ?, ?, 'waiting', ?)")
+            .bind("room-1")
+            .bind("Test Room")
+            .bind("user-1")
+            .bind(1000)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let (tx, _rx) = tokio::sync::mpsc::channel::<String>(32);
+        let room = Room::new(
+            "room-1".to_string(),
+            "Test Room".to_string(),
+            "user-1".to_string(),
+            "alice".to_string(),
+            tx,
+        );
+        rooms.write().await.insert("room-1".to_string(), room);
+
+        let state = ws::AppState {
+            db: pool,
+            sessions,
+            rooms: rooms.clone(),
+        };
+
+        ws::handle_disconnect(&state, "room-1".to_string(), "user-1".to_string()).await;
+
+        let remaining = rooms.read().await;
+        assert!(!remaining.contains_key("room-1"));
+
+        let status: Option<(String,)> = sqlx::query_as("SELECT status FROM rooms WHERE id = 'room-1'")
+            .fetch_optional(&state.db)
+            .await
+            .unwrap();
+        assert_eq!(status.unwrap().0, "ended");
     }
 }

@@ -351,7 +351,7 @@ async fn forward_messages(
     handle_disconnect(state, room_id, user_id).await;
 }
 
-async fn handle_disconnect(state: &AppState, room_id: String, user_id: String) {
+pub(crate) async fn handle_disconnect(state: &AppState, room_id: String, user_id: String) {
     let mut rooms = state.rooms.write().await;
     let room = match rooms.get_mut(&room_id) {
         Some(r) => r,
@@ -368,7 +368,12 @@ async fn handle_disconnect(state: &AppState, room_id: String, user_id: String) {
         );
         room.remove_player(&user_id);
         if room.is_empty() {
+            if let Err(e) = db::update_room_status(&state.db, &room_id, "ended").await {
+                tracing::error!(error = %e, room_id = %room_id,
+                    "failed to update room status to ended");
+            }
             rooms.remove(&room_id);
+            tracing::info!(room_id = %room_id, "empty waiting room removed");
         }
         return;
     }
@@ -444,7 +449,12 @@ async fn handle_disconnect(state: &AppState, room_id: String, user_id: String) {
             .unwrap_or(false);
 
         if !still_disconnected {
-            tracing::warn!(room_id = %room_id_clone, "timeout task: inconsistent state");
+            tracing::warn!(room_id = %room_id_clone,
+                "timeout task: inconsistent room state, cleaning up");
+            if let Err(e) = db::update_room_status(&state_clone.db, &room_id_clone, "ended").await {
+                tracing::error!(error = %e, room_id = %room_id_clone,
+                    "failed to update room status during inconsistent state cleanup");
+            }
             rooms.remove(&room_id_clone);
             return;
         }
@@ -456,7 +466,12 @@ async fn handle_disconnect(state: &AppState, room_id: String, user_id: String) {
             .or_else(|| room.get_opponent_id(&disconnected_user_id));
 
         if winner_id.is_none() {
-            tracing::error!(room_id = %room_id_clone, "timeout: no winner determinable");
+            tracing::error!(room_id = %room_id_clone,
+                "timeout task: cannot determine winner, cleaning up");
+            if let Err(e) = db::update_room_status(&state_clone.db, &room_id_clone, "ended").await {
+                tracing::error!(error = %e, room_id = %room_id_clone,
+                    "failed to update room status during winner resolution failure");
+            }
             rooms.remove(&room_id_clone);
             return;
         }
